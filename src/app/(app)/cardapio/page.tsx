@@ -1,24 +1,45 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
-import { Modal, SectionHeader, WeekSelector } from '@/components/ui'
-import {
-  REFEICAO_LABELS, REFEICAO_ORDER, DIAS_SEMANA, DIAS_SEMANA_SHORT
-} from '@/lib/utils'
-import { useAppStore } from '@/lib/store'
+import { Modal, WeekSelector } from '@/components/ui'
+import { REFEICAO_LABELS, REFEICAO_ORDER } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import type { Cardapio, RefeicaoTipo } from '@/types'
 
+const DIAS = [
+  { label: 'Dom', full: 'Domingo', dia: 6 },
+  { label: 'Seg', full: 'Segunda', dia: 0 },
+  { label: 'Ter', full: 'Terça', dia: 1 },
+  { label: 'Qua', full: 'Quarta', dia: 2 },
+  { label: 'Qui', full: 'Quinta', dia: 3 },
+  { label: 'Sex', full: 'Sexta', dia: 4 },
+  { label: 'Sáb', full: 'Sábado', dia: 5 },
+]
+
+function getSemanaDoMes(data: Date): number {
+  const primeiroDia = new Date(data.getFullYear(), data.getMonth(), 1)
+  const diaDaSemana = primeiroDia.getDay()
+  return Math.min(5, Math.ceil((data.getDate() + diaDaSemana) / 7))
+}
+
+function formatarDescricao(descricao: string): string[] {
+  return descricao
+    .split('\n')
+    .map(l => l.replace(/^-\s*/, '').trim())
+    .filter(Boolean)
+}
+
 export default function CardapioPage() {
-  const { semanaAtiva, setSemanaAtiva } = useAppStore()
+  const semanaAtual = getSemanaDoMes(new Date())
+  const [semanaAtiva, setSemanaAtiva] = useState(semanaAtual)
   const [cardapio, setCardapio] = useState<Cardapio[]>([])
   const [loading, setLoading] = useState(true)
   const [editando, setEditando] = useState<{
     open: boolean
     semana: number
     dia: number
+    diaFull: string
     refeicao: RefeicaoTipo
     descricao: string
     obs: string
@@ -38,20 +59,19 @@ export default function CardapioPage() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    carregar(semanaAtiva)
-  }, [semanaAtiva])
+  useEffect(() => { carregar(semanaAtiva) }, [semanaAtiva])
 
   function getRefeicao(dia: number, refeicao: RefeicaoTipo) {
     return cardapio.find((c) => c.dia_semana === dia && c.refeicao === refeicao)
   }
 
-  function abrirEdicao(dia: number, refeicao: RefeicaoTipo) {
+  function abrirEdicao(dia: number, diaFull: string, refeicao: RefeicaoTipo) {
     const item = getRefeicao(dia, refeicao)
     setEditando({
       open: true,
       semana: semanaAtiva,
       dia,
+      diaFull,
       refeicao,
       descricao: item?.descricao ?? '',
       obs: item?.observacoes ?? '',
@@ -62,18 +82,13 @@ export default function CardapioPage() {
     if (!editando) return
     setSalvando(true)
     const supabase = getSupabase()
-
-    const { error } = await supabase
-      .from('cardapio')
-      .upsert({
-        semana: editando.semana,
-        dia_semana: editando.dia,
-        refeicao: editando.refeicao,
-        descricao: editando.descricao,
-        observacoes: editando.obs,
-      }, {
-        onConflict: 'semana,dia_semana,refeicao',
-      })
+    const { error } = await supabase.from('cardapio').upsert({
+      semana: editando.semana,
+      dia_semana: editando.dia,
+      refeicao: editando.refeicao,
+      descricao: editando.descricao,
+      observacoes: editando.obs,
+    }, { onConflict: 'semana,dia_semana,refeicao' })
 
     if (error) {
       toast.error('Erro ao salvar')
@@ -88,16 +103,7 @@ export default function CardapioPage() {
   return (
     <div>
       {/* Controles */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '20px',
-          flexWrap: 'wrap',
-          gap: '12px',
-        }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <WeekSelector active={semanaAtiva} onChange={setSemanaAtiva} />
         <div style={{ fontSize: '13px', color: '#888780' }}>
           Clique em qualquer refeição para editar
@@ -105,102 +111,75 @@ export default function CardapioPage() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#888780' }}>
-          Carregando cardápio...
-        </div>
+        <div style={{ textAlign: 'center', padding: '60px', color: '#888780' }}>Carregando cardápio...</div>
       ) : (
         <div style={{ overflowX: 'auto', paddingBottom: '8px' }}>
-          <div className="week-grid-container">
-            {DIAS_SEMANA.map((dia, diaIdx) => (
-              <div key={dia}>
-                {/* Cabeçalho do dia */}
-                <div
-                  style={{
-                    textAlign: 'center',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    color: '#888780',
-                    padding: '6px 0',
-                    marginBottom: '6px',
-                  }}
-                >
-                  {DIAS_SEMANA_SHORT[diaIdx]}
-                </div>
-
-                {/* Refeições do dia */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  {REFEICAO_ORDER.map((refeicao) => {
-                    const item = getRefeicao(diaIdx, refeicao)
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '6px', minWidth: '900px' }}>
+            <thead>
+              <tr>
+                <th style={{ width: '80px', minWidth: '80px' }} />
+                {DIAS.map((d) => (
+                  <th key={d.dia} style={{ fontSize: '11px', color: '#888780', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '4px 8px', textAlign: 'center' }}>
+                    {d.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {REFEICAO_ORDER.map((refeicao) => (
+                <tr key={refeicao}>
+                  <td style={{ fontSize: '10px', color: '#888780', fontWeight: 600, textTransform: 'uppercase', padding: '4px 6px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    {REFEICAO_LABELS[refeicao]}
+                  </td>
+                  {DIAS.map((d) => {
+                    const item = getRefeicao(d.dia, refeicao)
+                    const linhas = item ? formatarDescricao(item.descricao) : []
                     return (
-                      <div
-                        key={refeicao}
-                        onClick={() => abrirEdicao(diaIdx, refeicao)}
-                        style={{
-                          background: '#fff',
-                          border: '1px solid #E5E3DC',
-                          borderRadius: '8px',
-                          padding: '8px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          minHeight: '56px',
-                        }}
-                        onMouseEnter={(e) => {
-                          ;(e.currentTarget as HTMLDivElement).style.borderColor = '#1D9E75'
-                          ;(e.currentTarget as HTMLDivElement).style.background = '#F0FBF7'
-                        }}
-                        onMouseLeave={(e) => {
-                          ;(e.currentTarget as HTMLDivElement).style.borderColor = '#E5E3DC'
-                          ;(e.currentTarget as HTMLDivElement).style.background = '#fff'
-                        }}
-                      >
+                      <td key={d.dia} style={{ verticalAlign: 'top', padding: '2px' }}>
                         <div
+                          onClick={() => abrirEdicao(d.dia, d.full, refeicao)}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLDivElement).style.borderColor = '#7B9E6B'
+                            ;(e.currentTarget as HTMLDivElement).style.background = '#F0FBF7'
+                          }}
+                          onMouseLeave={(e) => {
+                            ;(e.currentTarget as HTMLDivElement).style.borderColor = '#E5E3DC'
+                            ;(e.currentTarget as HTMLDivElement).style.background = item ? '#fff' : '#FAFAF8'
+                          }}
                           style={{
-                            fontSize: '9px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            color: '#888780',
-                            fontWeight: 600,
-                            marginBottom: '3px',
+                            background: item ? '#fff' : '#FAFAF8',
+                            border: '1px solid #E5E3DC',
+                            borderRadius: '8px',
+                            padding: '8px 10px',
+                            cursor: 'pointer',
+                            minHeight: '64px',
+                            transition: 'all 0.15s',
                           }}
                         >
-                          {REFEICAO_LABELS[refeicao].split(' ').slice(0, 2).join(' ')}
+                          {linhas.length > 0 ? (
+                            linhas.map((linha, i) => (
+                              <div key={i} style={{ fontSize: '12px', color: '#2C2C2A', lineHeight: 1.4, marginBottom: '1px' }}>
+                                {linha}
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ fontSize: '12px', color: '#C8C6BF', textAlign: 'center', paddingTop: '12px' }}>
+                              + Adicionar
+                            </div>
+                          )}
                         </div>
-                        <div
-                          style={{
-                            fontSize: '11px',
-                            color: item ? '#2C2C2A' : '#B4B2A9',
-                            lineHeight: 1.3,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {item?.descricao ?? '+ Adicionar'}
-                        </div>
-                      </div>
+                      </td>
                     )
                   })}
-                </div>
-              </div>
-            ))}
-          </div>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       {/* Legenda */}
-      <div
-        style={{
-          marginTop: '16px',
-          padding: '10px 14px',
-          background: '#E6F1FB',
-          borderRadius: '8px',
-          fontSize: '12px',
-          color: '#0C447C',
-        }}
-      >
+      <div style={{ marginTop: '16px', padding: '10px 14px', background: '#E6F1FB', borderRadius: '8px', fontSize: '12px', color: '#0C447C' }}>
         💡 Este cardápio de 5 semanas se repete em todos os meses. Alterações feitas aqui valem para sempre que a semana for usada.
       </div>
 
@@ -209,17 +188,11 @@ export default function CardapioPage() {
         <Modal
           open={editando.open}
           onClose={() => setEditando(null)}
-          title={`${DIAS_SEMANA[editando.dia]} · ${REFEICAO_LABELS[editando.refeicao]}`}
+          title={`${editando.diaFull} · ${REFEICAO_LABELS[editando.refeicao]}`}
           footer={
             <>
-              <button className="btn btn-sm" onClick={() => setEditando(null)}>
-                Cancelar
-              </button>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={salvarEdicao}
-                disabled={salvando}
-              >
+              <button className="btn btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
+              <button className="btn btn-sm btn-primary" onClick={salvarEdicao} disabled={salvando}>
                 {salvando ? 'Salvando...' : '✓ Salvar'}
               </button>
             </>
@@ -229,11 +202,9 @@ export default function CardapioPage() {
             <label className="input-label">Descrição da refeição</label>
             <textarea
               className="input"
-              rows={3}
+              rows={4}
               value={editando.descricao}
-              onChange={(e) =>
-                setEditando((prev) => prev ? { ...prev, descricao: e.target.value } : null)
-              }
+              onChange={(e) => setEditando((prev) => prev ? { ...prev, descricao: e.target.value } : null)}
               placeholder="Ex: Arroz, feijão, frango grelhado, salada verde"
             />
           </div>
@@ -243,22 +214,12 @@ export default function CardapioPage() {
               className="input"
               rows={2}
               value={editando.obs}
-              onChange={(e) =>
-                setEditando((prev) => prev ? { ...prev, obs: e.target.value } : null)
-              }
+              onChange={(e) => setEditando((prev) => prev ? { ...prev, obs: e.target.value } : null)}
               placeholder="Ex: Substituir por sopa para idosos com dificuldade de deglutição"
             />
           </div>
-          <div
-            style={{
-              padding: '10px',
-              background: '#FAEEDA',
-              borderRadius: '8px',
-              fontSize: '12px',
-              color: '#412402',
-            }}
-          >
-            Semana {editando.semana} · Dia {editando.dia + 1} · {REFEICAO_LABELS[editando.refeicao]}
+          <div style={{ padding: '10px', background: '#FAEEDA', borderRadius: '8px', fontSize: '12px', color: '#412402' }}>
+            Semana {editando.semana} · {editando.diaFull} · {REFEICAO_LABELS[editando.refeicao]}
           </div>
         </Modal>
       )}
