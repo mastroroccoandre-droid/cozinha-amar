@@ -64,21 +64,20 @@ export default function ProducaoPage() {
       const cardapioItem = cardapioItems?.find((c: any) => c.refeicao === tipo)
       const prep = preparacoes?.find((p: any) => p.tipo_refeicao === tipo)
 
-      // Monta lista de ingredientes — da preparação vinculada ou do cardápio
+      // Monta lista de ingredientes — sempre prioriza a preparação com quantidades reais
       let ingredientes: Ingrediente[] = []
 
-      if (prep?.ingredientes?.length > 0) {
+      if (prep && prep.ingredientes && prep.ingredientes.length > 0) {
+        // Usa ingredientes da preparação com quantidades reais do Excel
         ingredientes = prep.ingredientes.map((ing: any) => ({
           nome: ing.nome_ingrediente,
-          quantidade: ing.quantidade_por_idoso,
-          unidade: ing.unidade,
+          quantidade: Number(ing.quantidade_por_idoso) || 0,
+          unidade: ing.unidade || '',
         }))
-      } else if (cardapioItem?.descricao) {
-        // Fallback: mostra os itens do cardápio sem quantidade
-        const linhas = cardapioItem.descricao
-          .split('\n')
-          .map((l: string) => l.replace(/^-\s*/, '').trim())
-          .filter(Boolean)
+      } else {
+        // Fallback: extrai nomes do cardápio sem quantidade
+        const desc = cardapioItem?.descricao || ''
+        const linhas = desc.split('\n').map((l: string) => l.replace(/^-\s*/, '').trim()).filter(Boolean)
         ingredientes = linhas.map((nome: string) => ({ nome, quantidade: 0, unidade: '' }))
       }
 

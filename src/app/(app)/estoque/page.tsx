@@ -7,7 +7,7 @@ import {
   Modal, SectionHeader, Badge, EmptyState, ProgressBar, MetricCard
 } from '@/components/ui'
 import {
-  formatDate, formatBRL, getDiasParaVencer,
+  formatBRL,
   getStatusEstoque, getPorcentagemEstoque,
   CATEGORIA_LABELS, LOCAL_LABELS
 } from '@/lib/utils'
@@ -21,7 +21,6 @@ interface ProdutoForm {
   quantidade_atual: number
   estoque_minimo: number
   local_armazenamento: LocalEstoque
-  data_validade: string
   preco_medio: number
   observacoes: string
 }
@@ -33,7 +32,6 @@ const FORM_INICIAL: ProdutoForm = {
   quantidade_atual: 0,
   estoque_minimo: 0,
   local_armazenamento: 'despensa',
-  data_validade: '',
   preco_medio: 0,
   observacoes: '',
 }
@@ -49,7 +47,7 @@ export default function EstoquePage() {
   const [modalAjuste, setModalAjuste] = useState<{ open: boolean; produto?: Produto }>({ open: false })
   const [form, setForm] = useState<ProdutoForm>(FORM_INICIAL)
   const [ajuste, setAjuste] = useState({ tipo: 'ajuste', novaQtd: 0, motivo: '' })
-  const [entrada, setEntrada] = useState({ qtd: 0, validade: '', nf: '', fornecedor: '' })
+  const [entrada, setEntrada] = useState({ qtd: 0, nf: '', fornecedor: '' })
   const [salvando, setSalvando] = useState(false)
 
   async function carregar() {
@@ -77,10 +75,6 @@ export default function EstoquePage() {
   const stats = useMemo(() => ({
     total: produtos.length,
     baixo: produtos.filter((p) => getStatusEstoque(p) !== 'ok').length,
-    vencendo: produtos.filter((p) => {
-      const d = getDiasParaVencer(p.data_validade)
-      return d !== null && d >= 0 && d <= 7
-    }).length,
     categorias: new Set(produtos.map((p) => p.categoria)).size,
   }), [produtos])
 
@@ -91,7 +85,6 @@ export default function EstoquePage() {
 
     const { error } = await supabase.from('produtos').insert({
       ...form,
-      data_validade: form.data_validade || null,
       preco_medio: form.preco_medio || null,
     })
 
@@ -115,7 +108,6 @@ export default function EstoquePage() {
 
     await supabase.from('produtos').update({
       quantidade_atual: novaQtd,
-      data_validade: entrada.validade || prod.data_validade,
     }).eq('id', prod.id)
 
     await supabase.from('movimentacoes_estoque').insert({
@@ -129,7 +121,7 @@ export default function EstoquePage() {
 
     toast.success('Entrada registrada!')
     setModalEntrada({ open: false })
-    setEntrada({ qtd: 0, validade: '', nf: '', fornecedor: '' })
+    setEntrada({ qtd: 0, nf: '', fornecedor: '' })
     setSalvando(false)
     carregar()
   }
@@ -166,15 +158,6 @@ export default function EstoquePage() {
     return <Badge variant="green">Ok</Badge>
   }
 
-  function getValidadeBadge(p: Produto) {
-    const dias = getDiasParaVencer(p.data_validade)
-    if (dias === null) return null
-    if (dias < 0) return <Badge variant="red">Vencido</Badge>
-    if (dias <= 3) return <Badge variant="red">{dias}d</Badge>
-    if (dias <= 7) return <Badge variant="amber">{dias}d</Badge>
-    return null
-  }
-
   return (
     <div>
       {/* Métricas */}
@@ -193,11 +176,6 @@ export default function EstoquePage() {
           icon={<AlertTriangle size={13} />}
           color={stats.baixo > 0 ? '#BA7517' : undefined}
         />
-        <MetricCard
-          label="Vencendo em 7d"
-          value={stats.vencendo}
-          color={stats.vencendo > 0 ? '#A32D2D' : undefined}
-        />
         <MetricCard label="Categorias" value={stats.categorias} />
       </div>
 
@@ -211,7 +189,6 @@ export default function EstoquePage() {
           alignItems: 'center',
         }}
       >
-        {/* Busca */}
         <div style={{ position: 'relative', flex: '1', minWidth: '200px' }}>
           <Search
             size={14}
@@ -266,7 +243,6 @@ export default function EstoquePage() {
                 <th>Local</th>
                 <th>Quantidade</th>
                 <th>Mínimo</th>
-                <th>Validade</th>
                 <th>Status</th>
                 <th>Ações</th>
               </tr>
@@ -274,13 +250,13 @@ export default function EstoquePage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>
                     Carregando...
                   </td>
                 </tr>
               ) : filtrados.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>
                     Nenhum produto encontrado
                   </td>
                 </tr>
@@ -328,21 +304,6 @@ export default function EstoquePage() {
                       <td style={{ color: '#888780', fontSize: '13px' }}>
                         {p.estoque_minimo} {p.unidade}
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span
-                            style={{
-                              fontSize: '12px',
-                              color: getDiasParaVencer(p.data_validade) !== null && (getDiasParaVencer(p.data_validade) ?? 99) <= 7
-                                ? '#A32D2D'
-                                : '#5F5E5A',
-                            }}
-                          >
-                            {p.data_validade ? formatDate(p.data_validade) : '—'}
-                          </span>
-                          {getValidadeBadge(p)}
-                        </div>
-                      </td>
                       <td>{getStatusBadge(p)}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '4px' }}>
@@ -350,7 +311,7 @@ export default function EstoquePage() {
                             className="btn btn-sm btn-primary"
                             onClick={() => {
                               setModalEntrada({ open: true, produto: p })
-                              setEntrada({ qtd: 0, validade: p.data_validade ?? '', nf: '', fornecedor: '' })
+                              setEntrada({ qtd: 0, nf: '', fornecedor: '' })
                             }}
                             title="Registrar entrada"
                           >
@@ -425,10 +386,6 @@ export default function EstoquePage() {
             </select>
           </div>
           <div className="input-group">
-            <label className="input-label">Data de validade</label>
-            <input className="input" type="date" value={form.data_validade} onChange={(e) => setForm((f) => ({ ...f, data_validade: e.target.value }))} />
-          </div>
-          <div className="input-group">
             <label className="input-label">Preço médio (R$)</label>
             <input className="input" type="number" min={0} step={0.01} value={form.preco_medio} onChange={(e) => setForm((f) => ({ ...f, preco_medio: Number(e.target.value) }))} />
           </div>
@@ -460,10 +417,6 @@ export default function EstoquePage() {
         <div className="input-group">
           <label className="input-label">Quantidade recebida ({modalEntrada.produto?.unidade})</label>
           <input className="input" type="number" min={0} value={entrada.qtd} onChange={(e) => setEntrada((e2) => ({ ...e2, qtd: Number(e.target.value) }))} />
-        </div>
-        <div className="input-group">
-          <label className="input-label">Nova data de validade</label>
-          <input className="input" type="date" value={entrada.validade} onChange={(e) => setEntrada((e2) => ({ ...e2, validade: e.target.value }))} />
         </div>
         <div className="input-group">
           <label className="input-label">Nota fiscal / referência</label>
