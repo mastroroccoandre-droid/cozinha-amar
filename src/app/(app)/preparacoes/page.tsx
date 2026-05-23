@@ -34,13 +34,13 @@ function formatarQuantidade(qtd: number, unidade: string): string {
 }
 
 const DIAS: { label: string; dia: number }[] = [
+  { label: 'Domingo', dia: 6 },
   { label: 'Segunda', dia: 0 },
   { label: 'Terça', dia: 1 },
   { label: 'Quarta', dia: 2 },
   { label: 'Quinta', dia: 3 },
   { label: 'Sexta', dia: 4 },
   { label: 'Sábado', dia: 5 },
-  { label: 'Domingo', dia: 6 },
 ]
 
 const REFEICAO_ORDER: RefeicaoTipo[] = ['cafe_manha', 'colacao', 'almoco', 'lanche_tarde', 'jantar', 'ceia']
