@@ -48,8 +48,9 @@ const NAV_COZINHA = [
 ]
 
 // Emails com perfil cozinha (menu restrito)
-const EMAILS_COZINHA = [
+const EMAILS_RESTRITO = [
   'rosildacardoso1203@gmail.com',
+  'ffabiulahelena@gmail.com',
 ]
 
 const PERFIL_LABELS: Record<string, string> = {
@@ -74,7 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     getEmail()
   }, [])
 
-  const isCozinha = EMAILS_COZINHA.includes(emailUsuario)
+  const isCozinha = EMAILS_RESTRITO.includes(emailUsuario)
   const NAV = isCozinha ? NAV_COZINHA : NAV_ADMIN
 
   async function handleLogout() {
