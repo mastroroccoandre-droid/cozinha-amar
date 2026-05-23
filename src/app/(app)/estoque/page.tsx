@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Edit2, AlertTriangle, Package, Search } from 'lucide-react'
+import { Plus, Minus, Package, Search, AlertTriangle } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import { Modal, Badge, MetricCard } from '@/components/ui'
-import { getStatusEstoque, getPorcentagemEstoque, CATEGORIA_LABELS } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import type { Produto, CategoriaAlimento } from '@/types'
 
@@ -39,25 +38,24 @@ const FORM_INICIAL: ProdutoForm = {
 
 export default function EstoquePage() {
   const [produtos, setProdutos] = useState<Produto[]>([])
+  const [quantidades, setQuantidades] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
   const [catFiltro, setCatFiltro] = useState<string>('todas')
   const [modalNovo, setModalNovo] = useState(false)
-  const [modalEntrada, setModalEntrada] = useState<{ open: boolean; produto?: Produto }>({ open: false })
-  const [modalAjuste, setModalAjuste] = useState<{ open: boolean; produto?: Produto }>({ open: false })
   const [form, setForm] = useState<ProdutoForm>(FORM_INICIAL)
-  const [ajuste, setAjuste] = useState({ tipo: 'ajuste', novaQtd: 0, motivo: '' })
-  const [entrada, setEntrada] = useState({ qtd: 0, nf: '', fornecedor: '' })
-  const [salvando, setSalvando] = useState(false)
+  const [salvando, setSalvando] = useState<string | null>(null)
+  const [salvandoNovo, setSalvandoNovo] = useState(false)
 
   async function carregar() {
     const supabase = getSupabase()
-    const { data } = await supabase
-      .from('produtos')
-      .select('*')
-      .eq('ativo', true)
-      .order('nome')
-    setProdutos(data ?? [])
+    const { data } = await supabase.from('produtos').select('*').eq('ativo', true).order('nome')
+    const prods = data ?? []
+    setProdutos(prods)
+    // Inicializa quantidades com os valores atuais
+    const qtds: Record<string, number> = {}
+    prods.forEach((p: Produto) => { qtds[p.id] = p.quantidade_atual })
+    setQuantidades(qtds)
     setLoading(false)
   }
 
@@ -73,12 +71,42 @@ export default function EstoquePage() {
 
   const stats = useMemo(() => ({
     total: produtos.length,
-    baixo: produtos.filter((p) => getStatusEstoque(p) !== 'ok').length,
+    baixo: produtos.filter((p) => p.quantidade_atual < p.estoque_minimo).length,
   }), [produtos])
+
+  function alterarQuantidade(id: string, delta: number, unidade: string) {
+    setQuantidades(prev => {
+      const atual = prev[id] ?? 0
+      const passo = unidade === 'kg' || unidade === 'L' ? 0.5 : 1
+      const nova = Math.max(0, atual + delta * passo)
+      return { ...prev, [id]: nova }
+    })
+  }
+
+  async function salvarQuantidade(produto: Produto) {
+    const novaQtd = quantidades[produto.id] ?? produto.quantidade_atual
+    if (novaQtd === produto.quantidade_atual) return
+    setSalvando(produto.id)
+    const supabase = getSupabase()
+
+    await supabase.from('produtos').update({ quantidade_atual: novaQtd }).eq('id', produto.id)
+    await supabase.from('movimentacoes_estoque').insert({
+      produto_id: produto.id,
+      tipo: novaQtd > produto.quantidade_atual ? 'entrada' : 'ajuste',
+      quantidade: Math.abs(novaQtd - produto.quantidade_atual),
+      quantidade_anterior: produto.quantidade_atual,
+      quantidade_posterior: novaQtd,
+      motivo: 'Ajuste manual no estoque',
+    })
+
+    toast.success(`${produto.nome} atualizado!`)
+    setSalvando(null)
+    carregar()
+  }
 
   async function salvarProduto() {
     if (!form.nome.trim()) return toast.error('Informe o nome do produto')
-    setSalvando(true)
+    setSalvandoNovo(true)
     const supabase = getSupabase()
     const { error } = await supabase.from('produtos').insert({
       ...form,
@@ -92,56 +120,7 @@ export default function EstoquePage() {
       setForm(FORM_INICIAL)
       carregar()
     }
-    setSalvando(false)
-  }
-
-  async function salvarEntrada() {
-    if (!modalEntrada.produto || entrada.qtd <= 0) return
-    setSalvando(true)
-    const supabase = getSupabase()
-    const prod = modalEntrada.produto
-    const novaQtd = prod.quantidade_atual + entrada.qtd
-    await supabase.from('produtos').update({ quantidade_atual: novaQtd }).eq('id', prod.id)
-    await supabase.from('movimentacoes_estoque').insert({
-      produto_id: prod.id,
-      tipo: 'entrada',
-      quantidade: entrada.qtd,
-      quantidade_anterior: prod.quantidade_atual,
-      quantidade_posterior: novaQtd,
-      motivo: entrada.nf ? `Entrada NF: ${entrada.nf}` : 'Entrada manual',
-    })
-    toast.success('Entrada registrada!')
-    setModalEntrada({ open: false })
-    setEntrada({ qtd: 0, nf: '', fornecedor: '' })
-    setSalvando(false)
-    carregar()
-  }
-
-  async function salvarAjuste() {
-    if (!modalAjuste.produto) return
-    setSalvando(true)
-    const supabase = getSupabase()
-    const prod = modalAjuste.produto
-    await supabase.from('produtos').update({ quantidade_atual: ajuste.novaQtd }).eq('id', prod.id)
-    await supabase.from('movimentacoes_estoque').insert({
-      produto_id: prod.id,
-      tipo: ajuste.tipo,
-      quantidade: Math.abs(ajuste.novaQtd - prod.quantidade_atual),
-      quantidade_anterior: prod.quantidade_atual,
-      quantidade_posterior: ajuste.novaQtd,
-      motivo: ajuste.motivo,
-    })
-    toast.success('Estoque ajustado!')
-    setModalAjuste({ open: false })
-    setSalvando(false)
-    carregar()
-  }
-
-  function getStatusBadge(p: Produto) {
-    const status = getStatusEstoque(p)
-    if (status === 'critico') return <Badge variant="red">Crítico</Badge>
-    if (status === 'baixo') return <Badge variant="amber">Baixo</Badge>
-    return <Badge variant="green">Ok</Badge>
+    setSalvandoNovo(false)
   }
 
   return (
@@ -176,47 +155,72 @@ export default function EstoquePage() {
                 <th>Produto</th>
                 <th>Categoria</th>
                 <th>Quantidade</th>
-                <th>Mínimo</th>
-                <th>Status</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>Carregando...</td></tr>
+                <tr><td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>Carregando...</td></tr>
               ) : filtrados.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>Nenhum produto encontrado</td></tr>
+                <tr><td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: '#888780' }}>Nenhum produto encontrado</td></tr>
               ) : (
                 filtrados.map((p) => {
-                  const pct = getPorcentagemEstoque(p)
-                  const status = getStatusEstoque(p)
-                  const progressColor = status === 'ok' ? '#1D9E75' : status === 'baixo' ? '#BA7517' : '#A32D2D'
+                  const qtdAtual = quantidades[p.id] ?? p.quantidade_atual
+                  const alterado = qtdAtual !== p.quantidade_atual
                   return (
                     <tr key={p.id}>
                       <td>
                         <div style={{ fontWeight: 500 }}>{p.nome}</div>
                         {p.observacoes && <div style={{ fontSize: '11px', color: '#888780' }}>{p.observacoes}</div>}
                       </td>
-                      <td><Badge variant="gray">{CATEGORIAS_ESTOQUE.find(c => c.value === p.categoria)?.label ?? p.categoria}</Badge></td>
                       <td>
-                        <div style={{ fontWeight: 500, fontSize: '13px' }}>{p.quantidade_atual} {p.unidade}</div>
-                        <div style={{ width: '80px', marginTop: '4px' }}>
-                          <div style={{ height: '4px', background: '#F1EFE8', borderRadius: '2px' }}>
-                            <div style={{ height: '100%', borderRadius: '2px', background: progressColor, width: `${pct}%` }} />
-                          </div>
+                        <Badge variant="gray">{CATEGORIAS_ESTOQUE.find(c => c.value === p.categoria)?.label ?? p.categoria}</Badge>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            onClick={() => alterarQuantidade(p.id, -1, p.unidade)}
+                            style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #E5E3DC', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Minus size={13} />
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            step={p.unidade === 'kg' || p.unidade === 'L' ? 0.5 : 1}
+                            value={qtdAtual}
+                            onChange={(e) => setQuantidades(prev => ({ ...prev, [p.id]: parseFloat(e.target.value) || 0 }))}
+                            style={{
+                              width: '70px',
+                              padding: '4px 6px',
+                              border: `1px solid ${alterado ? '#7B9E6B' : '#E5E3DC'}`,
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              textAlign: 'center',
+                              fontWeight: alterado ? 600 : 400,
+                              color: alterado ? '#3D4F38' : '#2C2C2A',
+                              background: alterado ? '#EDF3EA' : '#fff',
+                            }}
+                          />
+                          <span style={{ fontSize: '12px', color: '#888780', minWidth: '24px' }}>{p.unidade}</span>
+                          <button
+                            onClick={() => alterarQuantidade(p.id, 1, p.unidade)}
+                            style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #E5E3DC', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Plus size={13} />
+                          </button>
                         </div>
                       </td>
-                      <td style={{ color: '#888780', fontSize: '13px' }}>{p.estoque_minimo} {p.unidade}</td>
-                      <td>{getStatusBadge(p)}</td>
                       <td>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button className="btn btn-sm btn-primary" onClick={() => { setModalEntrada({ open: true, produto: p }); setEntrada({ qtd: 0, nf: '', fornecedor: '' }) }}>
-                            + Entrada
+                        {alterado && (
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => salvarQuantidade(p)}
+                            disabled={salvando === p.id}
+                          >
+                            {salvando === p.id ? 'Salvando...' : '✓ Salvar'}
                           </button>
-                          <button className="btn btn-sm btn-icon" onClick={() => { setModalAjuste({ open: true, produto: p }); setAjuste({ tipo: 'ajuste', novaQtd: p.quantidade_atual, motivo: '' }) }}>
-                            <Edit2 size={13} />
-                          </button>
-                        </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -229,7 +233,7 @@ export default function EstoquePage() {
 
       {/* Modal Novo Produto */}
       <Modal open={modalNovo} onClose={() => { setModalNovo(false); setForm(FORM_INICIAL) }} title="Novo produto"
-        footer={<><button className="btn btn-sm" onClick={() => { setModalNovo(false); setForm(FORM_INICIAL) }}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={salvarProduto} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Cadastrar'}</button></>}>
+        footer={<><button className="btn btn-sm" onClick={() => { setModalNovo(false); setForm(FORM_INICIAL) }}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={salvarProduto} disabled={salvandoNovo}>{salvandoNovo ? 'Salvando...' : '✓ Cadastrar'}</button></>}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div className="input-group" style={{ gridColumn: '1 / -1' }}>
             <label className="input-label">Nome do produto *</label>
@@ -248,12 +252,8 @@ export default function EstoquePage() {
             </select>
           </div>
           <div className="input-group">
-            <label className="input-label">Quantidade atual</label>
+            <label className="input-label">Quantidade inicial</label>
             <input className="input" type="number" min={0} value={form.quantidade_atual} onChange={(e) => setForm((f) => ({ ...f, quantidade_atual: Number(e.target.value) }))} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Estoque mínimo</label>
-            <input className="input" type="number" min={0} value={form.estoque_minimo} onChange={(e) => setForm((f) => ({ ...f, estoque_minimo: Number(e.target.value) }))} />
           </div>
           <div className="input-group">
             <label className="input-label">Preço médio (R$)</label>
@@ -263,46 +263,6 @@ export default function EstoquePage() {
             <label className="input-label">Observações</label>
             <input className="input" value={form.observacoes} onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))} placeholder="Marca, variação, observação..." />
           </div>
-        </div>
-      </Modal>
-
-      {/* Modal Entrada */}
-      <Modal open={modalEntrada.open} onClose={() => setModalEntrada({ open: false })} title={`Entrada — ${modalEntrada.produto?.nome}`} size="sm"
-        footer={<><button className="btn btn-sm" onClick={() => setModalEntrada({ open: false })}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={salvarEntrada} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Registrar entrada'}</button></>}>
-        <div style={{ padding: '10px', background: '#E1F5EE', borderRadius: '8px', marginBottom: '14px', fontSize: '13px', color: '#085041' }}>
-          Saldo atual: <strong>{modalEntrada.produto?.quantidade_atual} {modalEntrada.produto?.unidade}</strong>
-        </div>
-        <div className="input-group">
-          <label className="input-label">Quantidade recebida ({modalEntrada.produto?.unidade})</label>
-          <input className="input" type="number" min={0} value={entrada.qtd} onChange={(e) => setEntrada((e2) => ({ ...e2, qtd: Number(e.target.value) }))} />
-        </div>
-        <div className="input-group">
-          <label className="input-label">Nota fiscal / referência</label>
-          <input className="input" value={entrada.nf} onChange={(e) => setEntrada((e2) => ({ ...e2, nf: e.target.value }))} placeholder="NF-001" />
-        </div>
-      </Modal>
-
-      {/* Modal Ajuste */}
-      <Modal open={modalAjuste.open} onClose={() => setModalAjuste({ open: false })} title={`Ajustar — ${modalAjuste.produto?.nome}`} size="sm"
-        footer={<><button className="btn btn-sm" onClick={() => setModalAjuste({ open: false })}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={salvarAjuste} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Salvar ajuste'}</button></>}>
-        <div style={{ padding: '10px', background: '#FAEEDA', borderRadius: '8px', marginBottom: '14px', fontSize: '13px', color: '#412402' }}>
-          Saldo atual: <strong>{modalAjuste.produto?.quantidade_atual} {modalAjuste.produto?.unidade}</strong>
-        </div>
-        <div className="input-group">
-          <label className="input-label">Tipo de ajuste</label>
-          <select className="input" value={ajuste.tipo} onChange={(e) => setAjuste((a) => ({ ...a, tipo: e.target.value }))}>
-            <option value="ajuste">Inventário / correção</option>
-            <option value="perda">Perda / descarte</option>
-            <option value="saida">Saída manual</option>
-          </select>
-        </div>
-        <div className="input-group">
-          <label className="input-label">Novo saldo ({modalAjuste.produto?.unidade})</label>
-          <input className="input" type="number" min={0} value={ajuste.novaQtd} onChange={(e) => setAjuste((a) => ({ ...a, novaQtd: Number(e.target.value) }))} />
-        </div>
-        <div className="input-group">
-          <label className="input-label">Motivo *</label>
-          <textarea className="input" rows={2} value={ajuste.motivo} onChange={(e) => setAjuste((a) => ({ ...a, motivo: e.target.value }))} placeholder="Descreva o motivo do ajuste..." />
         </div>
       </Modal>
     </div>
