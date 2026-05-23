@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { CheckCircle2, Clock, AlertTriangle, ChefHat } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
-import { Modal, Alert, SectionHeader } from '@/components/ui'
+import { Modal } from '@/components/ui'
 import {
   REFEICAO_LABELS, REFEICAO_HORARIOS, REFEICAO_ORDER,
   getSemanaCardapio, getDiaSemanaCardapio, DIAS_SEMANA
@@ -52,11 +52,10 @@ export default function ProducaoPage() {
     const { data: todasPreparacoes } = await supabase
       .from('preparacoes')
       .select('*, ingredientes:preparacao_ingredientes(*)')
-    
+
     const padrao = `Sem${semana}/Dia${diaSemana}`
     const preparacoes = (todasPreparacoes ?? []).filter((p: any) => p.nome.includes(padrao))
 
-    // Busca refeições já confirmadas hoje
     const dataHoje = hoje.toISOString().split('T')[0]
     const { data: confirmadas } = await supabase
       .from('producao_diaria')
@@ -99,13 +98,22 @@ export default function ProducaoPage() {
 
   useEffect(() => { carregarProducao() }, [carregarProducao])
 
+  function atualizarQuantidade(refIdx: number, ingIdx: number, novaQtd: number) {
+    setRefeicoes(prev => {
+      const updated = [...prev]
+      const ings = [...updated[refIdx].ingredientes]
+      ings[ingIdx] = { ...ings[ingIdx], quantidade: novaQtd }
+      updated[refIdx] = { ...updated[refIdx], ingredientes: ings }
+      return updated
+    })
+  }
+
   async function confirmarRefeicao(refIdx: number) {
     setSalvando(true)
     const supabase = getSupabase()
     const ref = refeicoes[refIdx]
     const dataHoje = hoje.toISOString().split('T')[0]
 
-    // Registra produção
     const { data: producao } = await supabase.from('producao_diaria').upsert({
       data: dataHoje,
       semana_cardapio: semana,
@@ -117,63 +125,54 @@ export default function ProducaoPage() {
       confirmado_em: new Date().toISOString(),
     }, { onConflict: 'data,refeicao' }).select().single()
 
-    // Registra ingredientes consumidos e desconta do estoque
-    if (producao && ref.ingredientes.length > 0) {
-      const ingsValidos = ref.ingredientes.filter(i => i.quantidade > 0)
-      if (ingsValidos.length > 0) {
-        // Salva no historico de producao
-        await supabase.from('producao_ingredientes').insert(
-          ingsValidos.map(ing => ({
-            producao_id: producao.id,
-            nome_ingrediente: ing.nome,
-            quantidade: ing.quantidade,
-            unidade: ing.unidade,
-          }))
-        )
+    const ingsValidos = ref.ingredientes.filter(i => i.quantidade > 0)
 
-        // Desconta do estoque via produto_id
-        for (const ing of ingsValidos) {
-          // Busca produto vinculado
-          const { data: ingData } = await supabase
-            .from('preparacao_ingredientes')
-            .select('produto_id')
-            .eq('nome_ingrediente', ing.nome)
-            .limit(1)
-            .single()
+    if (producao && ingsValidos.length > 0) {
+      // Salva no histórico de produção
+      await supabase.from('producao_ingredientes').insert(
+        ingsValidos.map(ing => ({
+          producao_id: producao.id,
+          nome_ingrediente: ing.nome,
+          quantidade: ing.quantidade,
+          unidade: ing.unidade,
+        }))
+      )
 
-          if (!ingData?.produto_id) continue
+      // Desconta do estoque
+      for (const ing of ingsValidos) {
+        const { data: ingData } = await supabase
+          .from('preparacao_ingredientes')
+          .select('produto_id')
+          .eq('nome_ingrediente', ing.nome)
+          .limit(1)
+          .single()
 
-          // Busca saldo atual
-          const { data: produto } = await supabase
-            .from('produtos')
-            .select('quantidade_atual, unidade')
-            .eq('id', ingData.produto_id)
-            .single()
+        if (!ingData?.produto_id) continue
 
-          if (!produto) continue
+        const { data: produto } = await supabase
+          .from('produtos')
+          .select('quantidade_atual, unidade')
+          .eq('id', ingData.produto_id)
+          .single()
 
-          // Converte unidade se necessario (g->kg, ml->L)
-          let qtdDescontar = ing.quantidade
-          if (ing.unidade === 'g' && produto.unidade === 'kg') qtdDescontar = ing.quantidade / 1000
-          if (ing.unidade === 'ml' && produto.unidade === 'L') qtdDescontar = ing.quantidade / 1000
+        if (!produto) continue
 
-          const novaQtd = Math.max(0, produto.quantidade_atual - qtdDescontar)
+        let qtdDescontar = ing.quantidade
+        if (ing.unidade === 'g' && produto.unidade === 'kg') qtdDescontar = ing.quantidade / 1000
+        if (ing.unidade === 'ml' && produto.unidade === 'L') qtdDescontar = ing.quantidade / 1000
 
-          // Atualiza estoque
-          await supabase.from('produtos').update({
-            quantidade_atual: novaQtd
-          }).eq('id', ingData.produto_id)
+        const novaQtd = Math.max(0, produto.quantidade_atual - qtdDescontar)
 
-          // Registra movimentacao
-          await supabase.from('movimentacoes_estoque').insert({
-            produto_id: ingData.produto_id,
-            tipo: 'saida',
-            quantidade: qtdDescontar,
-            quantidade_anterior: produto.quantidade_atual,
-            quantidade_posterior: novaQtd,
-            motivo: `Refeição: ${REFEICAO_LABELS[ref.tipo]} — ${dataHoje}`,
-          })
-        }
+        await supabase.from('produtos').update({ quantidade_atual: novaQtd }).eq('id', ingData.produto_id)
+
+        await supabase.from('movimentacoes_estoque').insert({
+          produto_id: ingData.produto_id,
+          tipo: 'saida',
+          quantidade: qtdDescontar,
+          quantidade_anterior: produto.quantidade_atual,
+          quantidade_posterior: novaQtd,
+          motivo: `Refeição: ${REFEICAO_LABELS[ref.tipo]} — ${dataHoje}`,
+        })
       }
     }
 
@@ -207,9 +206,7 @@ export default function ProducaoPage() {
       {/* Header */}
       <div style={{ background: '#EDF3EA', borderRadius: '14px', padding: '20px 24px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '18px', fontWeight: 600, color: '#3D4F38', marginBottom: '4px' }}>
-            Produção do Dia
-          </div>
+          <div style={{ fontSize: '18px', fontWeight: 600, color: '#3D4F38', marginBottom: '4px' }}>Produção do Dia</div>
           <div style={{ fontSize: '13px', color: '#5A7A4C' }}>
             Semana {semana} · {DIAS_SEMANA[diaSemana]} · {hoje.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })} · {numIdosos} refeições
           </div>
@@ -228,7 +225,6 @@ export default function ProducaoPage() {
       {/* Refeições */}
       {refeicoes.map((ref, refIdx) => (
         <div key={ref.tipo} style={{ marginBottom: '20px' }}>
-
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
             {ref.confirmada
               ? <CheckCircle2 size={18} style={{ color: '#7B9E6B' }} />
@@ -249,8 +245,8 @@ export default function ProducaoPage() {
             )}
 
             {ref.ingredientes.length > 0 && (
-              <div style={{ padding: '0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', padding: '6px 16px', background: '#F8F6F2', borderBottom: '1px solid #E5E3DC', fontSize: '10px', fontWeight: 600, color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', padding: '6px 16px', background: '#F8F6F2', borderBottom: '1px solid #E5E3DC', fontSize: '10px', fontWeight: 600, color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   <span>Ingrediente</span>
                   <span style={{ textAlign: 'right' }}>Quantidade</span>
                 </div>
@@ -258,16 +254,38 @@ export default function ProducaoPage() {
                 {ref.ingredientes.map((ing, i) => (
                   <div key={i} style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 120px',
-                    padding: '9px 16px',
+                    gridTemplateColumns: '1fr 160px',
+                    padding: '7px 16px',
                     borderBottom: i < ref.ingredientes.length - 1 ? '1px solid #F1EFE8' : 'none',
                     fontSize: '13px',
                     alignItems: 'center',
                   }}>
                     <span style={{ color: '#2C2C2A', fontWeight: 500 }}>{ing.nome}</span>
-                    <span style={{ textAlign: 'right', color: '#5F5E5A' }}>
-                      {ing.quantidade > 0 ? `${ing.quantidade} ${ing.unidade}` : '—'}
-                    </span>
+                    {!ref.confirmada && ing.quantidade > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={ing.quantidade}
+                          onChange={(e) => atualizarQuantidade(refIdx, i, parseFloat(e.target.value) || 0)}
+                          style={{
+                            width: '70px',
+                            padding: '3px 6px',
+                            border: '1px solid #E5E3DC',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            textAlign: 'right',
+                            background: '#FAFAF8',
+                          }}
+                        />
+                        <span style={{ color: '#888780', fontSize: '12px', minWidth: '24px' }}>{ing.unidade}</span>
+                      </div>
+                    ) : (
+                      <span style={{ textAlign: 'right', color: '#5F5E5A' }}>
+                        {ing.quantidade > 0 ? `${ing.quantidade} ${ing.unidade}` : '—'}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
