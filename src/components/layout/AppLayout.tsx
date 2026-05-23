@@ -34,6 +34,7 @@ const NAV_ADMIN = [
 
 const NAV_COZINHA = [
   { section: 'Principal', items: [
+    { href: '/dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
     { href: '/producao',      label: 'Produção do Dia',  icon: ChefHat },
   ]},
   { section: 'Cardápio', items: [
