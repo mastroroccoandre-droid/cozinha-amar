@@ -42,8 +42,6 @@ function limparDescricao(desc: string) {
     .filter(Boolean)
 }
 
-const EMAILS_COZINHA = ['rosildacardoso1203@gmail.com']
-
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -53,12 +51,6 @@ export default function DashboardPage() {
     async function load() {
       const supabase = getSupabase()
 
-      // Redireciona cozinheira para Produção do Dia
-      const { data: authData } = await supabase.auth.getUser()
-      if (EMAILS_COZINHA.includes(authData.user?.email ?? '')) {
-        router.replace('/producao')
-        return
-      }
       const [configRes, produtosRes, cardapioRes] = await Promise.all([
         supabase.from('configuracoes').select('*').single(),
         supabase.from('produtos').select('*').eq('ativo', true).order('nome'),
