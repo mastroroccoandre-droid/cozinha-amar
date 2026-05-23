@@ -208,11 +208,7 @@ export default function PreparacoesPage() {
           <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '6px' }}>
             <thead>
               <tr>
-                {filtroRefeicao !== 'todas' && (
-                  <th style={{ width: '80px', fontSize: '11px', color: '#888780', fontWeight: 600, textTransform: 'uppercase', padding: '4px 8px', textAlign: 'left' }}>
-                    Refeição
-                  </th>
-                )}
+                <th style={{ width: '100px', minWidth: '100px' }} />
                 {DIAS.map((d) => (
                   <th key={d.dia} style={{ fontSize: '11px', color: '#888780', fontWeight: 600, textTransform: 'uppercase', padding: '4px 8px', textAlign: 'center', letterSpacing: '0.5px' }}>
                     {d.label}
@@ -223,11 +219,9 @@ export default function PreparacoesPage() {
             <tbody>
               {refeicoesExibir.map((refeicao) => (
                 <tr key={refeicao}>
-                  {filtroRefeicao !== 'todas' ? null : (
-                    <td style={{ fontSize: '10px', color: '#888780', fontWeight: 600, textTransform: 'uppercase', padding: '4px 6px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
-                      {REFEICAO_LABELS[refeicao]}
-                    </td>
-                  )}
+                  <td style={{ fontSize: '10px', color: '#888780', fontWeight: 600, textTransform: 'uppercase', padding: '4px 6px', verticalAlign: 'middle', whiteSpace: 'nowrap', width: '100px', minWidth: '100px' }}>
+                    {REFEICAO_LABELS[refeicao]}
+                  </td>
                   {DIAS.map((d) => {
                     const prep = getPrep(d.dia, refeicao)
                     return (
@@ -245,11 +239,7 @@ export default function PreparacoesPage() {
                             color: prep ? '#2C2C2A' : '#C8C6BF',
                           }}
                         >
-                          {filtroRefeicao === 'todas' && (
-                            <div style={{ fontSize: '9px', color: '#888780', textTransform: 'uppercase', fontWeight: 600, marginBottom: '4px' }}>
-                              {REFEICAO_LABELS[refeicao]}
-                            </div>
-                          )}
+
                           {prep ? (
                             <>
                               {prep.ingredientes?.slice(0, 3).map((ing, i) => (
