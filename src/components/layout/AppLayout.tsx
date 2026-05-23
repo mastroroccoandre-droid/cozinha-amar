@@ -52,6 +52,12 @@ const EMAILS_COZINHA = [
   'rosildacardoso1203@gmail.com',
 ]
 
+const PERFIL_LABELS: Record<string, string> = {
+  'admin@residencialamar.com.br': 'Admin',
+  'rosildacardoso1203@gmail.com': 'Cozinha',
+  'ffabiulahelena@gmail.com': 'Nutricionista',
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -126,7 +132,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ color: '#fff', fontSize: '12px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{usuario?.nome ?? 'Usuário'}</div>
-            <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px', textTransform: 'capitalize' }}>{isCozinha ? 'Cozinha' : (usuario?.perfil ?? 'Admin')}</div>
+            <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px', textTransform: 'capitalize' }}>{PERFIL_LABELS[emailUsuario] ?? 'Admin'}</div>
           </div>
           <button onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.35)', padding: '4px', borderRadius: '6px', display: 'flex' }} title="Sair">
             <LogOut size={15} />
