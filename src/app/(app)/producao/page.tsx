@@ -111,7 +111,10 @@ export default function ProducaoPage() {
   }
 
   async function salvarPerda() {
-    if (!perda.nome_item.trim() || !modalPerda.refeicao) return toast.error('Informe o item')
+    if (!perda.nome_item.trim() || !modalPerda.refeicao) {
+      toast.error('Informe o item')
+      return
+    }
     setSalvandoPerda(true)
     const supabase = getSupabase()
     const dataHoje = hoje.toISOString().split('T')[0]
@@ -150,7 +153,6 @@ export default function ProducaoPage() {
     const ingsValidos = ref.ingredientes.filter(i => i.quantidade > 0)
 
     if (producao && ingsValidos.length > 0) {
-      // Salva no histórico de produção
       await supabase.from('producao_ingredientes').insert(
         ingsValidos.map(ing => ({
           producao_id: producao.id,
@@ -160,7 +162,6 @@ export default function ProducaoPage() {
         }))
       )
 
-      // Desconta do estoque
       for (const ing of ingsValidos) {
         const { data: ingData } = await supabase
           .from('preparacao_ingredientes')
@@ -186,7 +187,6 @@ export default function ProducaoPage() {
         const novaQtd = Math.max(0, produto.quantidade_atual - qtdDescontar)
 
         await supabase.from('produtos').update({ quantidade_atual: novaQtd }).eq('id', ingData.produto_id)
-
         await supabase.from('movimentacoes_estoque').insert({
           produto_id: ingData.produto_id,
           tipo: 'saida',
@@ -225,7 +225,6 @@ export default function ProducaoPage() {
   return (
     <div style={{ maxWidth: '760px', margin: '0 auto' }}>
 
-      {/* Header */}
       <div style={{ background: '#EDF3EA', borderRadius: '14px', padding: '20px 24px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: '18px', fontWeight: 600, color: '#3D4F38', marginBottom: '4px' }}>Produção do Dia</div>
@@ -239,12 +238,10 @@ export default function ProducaoPage() {
         </div>
       </div>
 
-      {/* Barra de progresso */}
       <div style={{ height: '8px', background: '#E5E3DC', borderRadius: '4px', marginBottom: '24px', overflow: 'hidden' }}>
         <div style={{ height: '100%', background: '#7B9E6B', borderRadius: '4px', width: `${pct}%`, transition: 'width 0.4s ease' }} />
       </div>
 
-      {/* Refeições */}
       {refeicoes.map((ref, refIdx) => (
         <div key={ref.tipo} style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -259,7 +256,6 @@ export default function ProducaoPage() {
           </div>
 
           <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: ref.confirmada ? 0.75 : 1 }}>
-
             {ref.descricao && (
               <div style={{ padding: '10px 16px', background: '#F8F6F2', fontSize: '12px', color: '#5F5E5A', borderBottom: '1px solid #E5E3DC' }}>
                 📋 {ref.descricao.split('\n').map(l => l.replace(/^-\s*/, '')).filter(Boolean).join(' · ')}
@@ -272,16 +268,8 @@ export default function ProducaoPage() {
                   <span>Ingrediente</span>
                   <span style={{ textAlign: 'right' }}>Quantidade</span>
                 </div>
-
                 {ref.ingredientes.map((ing, i) => (
-                  <div key={i} style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 160px',
-                    padding: '7px 16px',
-                    borderBottom: i < ref.ingredientes.length - 1 ? '1px solid #F1EFE8' : 'none',
-                    fontSize: '13px',
-                    alignItems: 'center',
-                  }}>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 160px', padding: '7px 16px', borderBottom: i < ref.ingredientes.length - 1 ? '1px solid #F1EFE8' : 'none', fontSize: '13px', alignItems: 'center' }}>
                     <span style={{ color: '#2C2C2A', fontWeight: 500 }}>{ing.nome}</span>
                     {!ref.confirmada && ing.quantidade > 0 ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
@@ -291,15 +279,7 @@ export default function ProducaoPage() {
                           step={0.1}
                           value={ing.quantidade}
                           onChange={(e) => atualizarQuantidade(refIdx, i, parseFloat(e.target.value) || 0)}
-                          style={{
-                            width: '70px',
-                            padding: '3px 6px',
-                            border: '1px solid #E5E3DC',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            textAlign: 'right',
-                            background: '#FAFAF8',
-                          }}
+                          style={{ width: '70px', padding: '3px 6px', border: '1px solid #E5E3DC', borderRadius: '6px', fontSize: '13px', textAlign: 'right', background: '#FAFAF8' }}
                         />
                         <span style={{ color: '#888780', fontSize: '12px', minWidth: '24px' }}>{ing.unidade}</span>
                       </div>
@@ -321,40 +301,33 @@ export default function ProducaoPage() {
 
             {!ref.confirmada ? (
               <div style={{ padding: '10px 14px', background: '#F8F6F2', display: 'flex', gap: '8px', borderTop: '1px solid #E5E3DC' }}>
-                <button
-                  className="btn btn-primary"
-                  style={{ flex: 1, fontSize: '13px' }}
-                  onClick={() => confirmarRefeicao(refIdx)}
-                  disabled={salvando}
-                >
-                  <CheckCircle2 size={14} />
-                  Confirmar refeição
+                <button className="btn btn-primary" style={{ flex: 1, fontSize: '13px' }} onClick={() => confirmarRefeicao(refIdx)} disabled={salvando}>
+                  <CheckCircle2 size={14} /> Confirmar refeição
                 </button>
                 <button className="btn btn-sm" onClick={() => { setModalPerda({ open: true, refeicao: ref.tipo }); setPerda({ nome_item: '', quantidade: '', unidade: 'kg', motivo: 'Preparação excedente', observacao: '' }) }}>
-                  <AlertTriangle size={13} />
-                  Perda
+                  <AlertTriangle size={13} /> Perda
                 </button>
               </div>
             ) : (
               <div style={{ padding: '10px 16px', background: '#EDF3EA', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#3D4F38' }}>
-                <CheckCircle2 size={15} />
-                Refeição confirmada
+                <CheckCircle2 size={15} /> Refeição confirmada
               </div>
             )}
           </div>
         </div>
       ))}
 
-      {/* Modal Perda */}
       <Modal
         open={modalPerda.open}
         onClose={() => setModalPerda({ open: false })}
-        title={\}
+        title={`Registrar perda — ${REFEICAO_LABELS[modalPerda.refeicao ?? 'almoco']}`}
         size="sm"
         footer={
           <>
             <button className="btn btn-sm" onClick={() => setModalPerda({ open: false })}>Cancelar</button>
-            <button className="btn btn-sm btn-primary" onClick={salvarPerda} disabled={salvandoPerda}>{salvandoPerda ? 'Salvando...' : '✓ Registrar perda'}</button>
+            <button className="btn btn-sm btn-primary" onClick={salvarPerda} disabled={salvandoPerda}>
+              {salvandoPerda ? 'Salvando...' : '✓ Registrar perda'}
+            </button>
           </>
         }
       >
