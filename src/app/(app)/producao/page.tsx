@@ -51,13 +51,14 @@ export default function ProducaoPage() {
       .eq('semana', semana)
       .eq('dia_semana', diaSemana)
 
-    // Busca preparações com ingredientes para este dia/semana
-    // Formato do nome: "Desjejum Sem4/Dia5", "Almoço Sem4/Dia5", etc
-    const sufixo = `Sem${semana}/Dia${diaSemana}`
-    const { data: preparacoes } = await supabase
+    // Busca todas as preparações com ingredientes que contenham o padrão do dia
+    const { data: todasPreparacoes } = await supabase
       .from('preparacoes')
       .select('*, ingredientes:preparacao_ingredientes(*)')
-      .like('nome', `%${sufixo}`)
+    
+    // Filtra pelo padrão Sem{n}/Dia{n} no nome
+    const padrao = `Sem${semana}/Dia${diaSemana}`
+    const preparacoes = (todasPreparacoes ?? []).filter((p: any) => p.nome.includes(padrao))
 
     const refeicoesData: RefeicaoProducao[] = REFEICAO_ORDER.map((tipo) => {
       const cardapioItem = cardapioItems?.find((c: any) => c.refeicao === tipo)
