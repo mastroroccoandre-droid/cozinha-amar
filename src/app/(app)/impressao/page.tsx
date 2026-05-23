@@ -5,25 +5,31 @@ import { Printer } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 
 const DIAS = [
-  { label: 'Domingo', dia: 6 },
-  { label: 'Segunda', dia: 0 },
-  { label: 'Terca', dia: 1 },
-  { label: 'Quarta', dia: 2 },
-  { label: 'Quinta', dia: 3 },
-  { label: 'Sexta', dia: 4 },
-  { label: 'Sabado', dia: 5 },
+  { label: 'Domingo', dia: 6, ordinal: '1º' },
+  { label: 'Segunda', dia: 0, ordinal: '2º' },
+  { label: 'Terca', dia: 1, ordinal: '3º' },
+  { label: 'Quarta', dia: 2, ordinal: '4º' },
+  { label: 'Quinta', dia: 3, ordinal: '5º' },
+  { label: 'Sexta', dia: 4, ordinal: '6º' },
+  { label: 'Sabado', dia: 5, ordinal: '7º' },
 ]
 
 const REFEICOES = [
-  { key: 'cafe_manha', label: 'Desjejum' },
-  { key: 'colacao', label: 'Colacao' },
-  { key: 'almoco', label: 'Almoco' },
-  { key: 'lanche_tarde', label: 'Lanche' },
-  { key: 'jantar', label: 'Janta' },
-  { key: 'ceia', label: 'Ceia' },
+  { key: 'cafe_manha', label: 'DESJEJUM' },
+  { key: 'colacao', label: 'COLAÇÃO' },
+  { key: 'almoco', label: 'ALMOÇO' },
+  { key: 'lanche_tarde', label: 'LANCHE' },
+  { key: 'jantar', label: 'JANTA' },
+  { key: 'ceia', label: 'CEIA' },
 ]
 
-const ORDINAL = ['1a', '2a', '3a', '4a', '5a', '6a', '7a']
+const QTDE_MEDIA_DIARIA = [
+  { nome: 'açúcar', quantidade: 2, unidade: 'kg' },
+  { nome: 'alho', quantidade: 320, unidade: 'g' },
+  { nome: 'cebola', quantidade: 580, unidade: 'g' },
+  { nome: 'cheiro verde', quantidade: 0.5, unidade: 'UN' },
+  { nome: 'óleo', quantidade: 1, unidade: 'L' },
+]
 
 export default function ImpressaoPage() {
   const [semanas, setSemanas] = useState<number[]>([1, 2, 3, 4, 5])
@@ -53,11 +59,13 @@ export default function ImpressaoPage() {
           const prep = (todasPreps ?? []).find((p: any) => p.tipo_refeicao === ref.key)
           cardapio[ref.key] = { descricao: item?.descricao ?? '', observacoes: item?.observacoes ?? '' }
           ingredientes[ref.key] = prep?.ingredientes?.map((i: any) => ({
-            nome: i.nome_ingrediente, quantidade: i.quantidade_por_idoso, unidade: i.unidade,
+            nome: i.nome_ingrediente,
+            quantidade: i.quantidade_por_idoso,
+            unidade: i.unidade,
           })) ?? []
         }
 
-        resultado.push({ semana, dia: diaObj.dia, diaLabel: diaObj.label, cardapio, ingredientes })
+        resultado.push({ semana, dia: diaObj.dia, diaObj, cardapio, ingredientes })
       }
     }
 
@@ -69,24 +77,14 @@ export default function ImpressaoPage() {
     return desc.split('\n').map((l: string) => l.replace(/^-\s*/, '').trim()).filter(Boolean)
   }
 
-  const tdStyle: React.CSSProperties = {
-    border: '1px solid #000',
-    padding: '3px 4px',
+  const border = '1px solid #000'
+  const cellStyle: React.CSSProperties = {
+    border,
+    padding: '2px 3px',
     verticalAlign: 'top',
-    width: '16.66%',
-    fontSize: '7.5pt',
+    fontSize: '7pt',
     fontFamily: 'Arial, sans-serif',
-  }
-
-  const thStyle: React.CSSProperties = {
-    border: '1px solid #000',
-    padding: '3px 4px',
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: '7.5pt',
-    fontFamily: 'Arial, sans-serif',
-    background: '#e0e0e0',
-    width: '16.66%',
+    lineHeight: '1.2',
   }
 
   return (
@@ -104,7 +102,6 @@ export default function ImpressaoPage() {
             ))}
           </div>
         </div>
-
         <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E5E3DC', padding: '20px', marginBottom: '16px' }}>
           <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px' }}>Selecionar dias</div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -116,7 +113,6 @@ export default function ImpressaoPage() {
             ))}
           </div>
         </div>
-
         <div style={{ display: 'flex', gap: '12px' }}>
           <button className="btn btn-primary" onClick={gerarFichas} disabled={loading || semanas.length === 0 || diasSel.length === 0}>
             {loading ? 'Gerando...' : 'Gerar ' + (semanas.length * diasSel.length) + ' fichas'}
@@ -130,86 +126,153 @@ export default function ImpressaoPage() {
       </div>
 
       {/* Fichas */}
-      {fichas.map((ficha, idx) => (
-        <div key={idx} style={{ pageBreakAfter: idx < fichas.length - 1 ? 'always' : 'avoid', marginBottom: '32px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            {/* Cabeçalho */}
-            <thead>
-              <tr>
-                <td colSpan={6} style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontWeight: 'bold', fontSize: '9pt', fontFamily: 'Arial, sans-serif', background: '#d0d0d0' }}>
-                  RESIDENCIAL AMAR — {ORDINAL[DIAS.findIndex(d => d.dia === ficha.dia)]} {ficha.diaLabel.toUpperCase()} DO MES — SEMANA {ficha.semana}
-                </td>
-              </tr>
-              <tr>
-                {REFEICOES.map(ref => <th key={ref.key} style={thStyle}>{ref.label.toUpperCase()}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Linha cardápio */}
-              <tr>
-                {REFEICOES.map(ref => (
-                  <td key={ref.key} style={{ ...tdStyle, minHeight: '50px' }}>
-                    {formatDesc(ficha.cardapio[ref.key]?.descricao ?? '').map((l: string, i: number) => (
-                      <div key={i} style={{ lineHeight: 1.3 }}>- {l}</div>
-                    ))}
+      {fichas.map((ficha, idx) => {
+        // Calcula número máximo de linhas de ingredientes
+        const maxLinhas = Math.max(...REFEICOES.map(ref => (ficha.ingredientes[ref.key] ?? []).length), QTDE_MEDIA_DIARIA.length)
+
+        return (
+          <div key={idx} style={{ pageBreakAfter: idx < fichas.length - 1 ? 'always' : 'avoid', marginBottom: '32px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                {/* Desjejum: nome, qtd, un */}
+                <col style={{ width: '9%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
+                {/* Colação */}
+                <col style={{ width: '6%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
+                {/* Almoço */}
+                <col style={{ width: '11%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
+                {/* Lanche */}
+                <col style={{ width: '9%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
+                {/* Janta */}
+                <col style={{ width: '9%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
+                {/* Ceia */}
+                <col style={{ width: '7%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
+              </colgroup>
+              <thead>
+                {/* Título */}
+                <tr>
+                  <td colSpan={18} style={{ ...cellStyle, textAlign: 'center', fontWeight: 'bold', fontSize: '9pt', background: '#d0d0d0', padding: '4px' }}>
+                    RESIDENCIAL AMAR — {ficha.diaObj.ordinal} {ficha.diaObj.label.toUpperCase()} DO MÊS — SEMANA {ficha.semana}
                   </td>
-                ))}
-              </tr>
-
-              {/* Divisor quantidades */}
-              <tr>
-                <td colSpan={6} style={{ border: '1px solid #000', padding: '2px', textAlign: 'center', fontSize: '7pt', fontFamily: 'Arial, sans-serif', background: '#f0f0f0', fontStyle: 'italic' }}>
-                  Quantidades para 59 refeicoes
-                </td>
-              </tr>
-
-              {/* Linha ingredientes */}
-              <tr>
-                {REFEICOES.map(ref => (
-                  <td key={ref.key} style={{ ...tdStyle, minHeight: '70px' }}>
-                    {(ficha.ingredientes[ref.key] ?? []).map((ing: any, i: number) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', lineHeight: 1.3, gap: '2px' }}>
-                        <span style={{ flex: 1 }}>{ing.nome}</span>
-                        <span style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{ing.quantidade} {ing.unidade}</span>
-                      </div>
-                    ))}
+                </tr>
+                {/* Headers refeições */}
+                <tr>
+                  {REFEICOES.map(ref => (
+                    <td key={ref.key} colSpan={3} style={{ ...cellStyle, textAlign: 'center', fontWeight: 'bold', background: '#e0e0e0', fontSize: '8pt' }}>
+                      {ref.label}
+                    </td>
+                  ))}
+                </tr>
+                {/* Cardápio */}
+                <tr>
+                  {REFEICOES.map(ref => (
+                    <td key={ref.key} colSpan={3} style={{ ...cellStyle, minHeight: '50px' }}>
+                      {formatDesc(ficha.cardapio[ref.key]?.descricao ?? '').map((l: string, i: number) => (
+                        <div key={i}>- {l}</div>
+                      ))}
+                    </td>
+                  ))}
+                </tr>
+                {/* Divisor quantidades */}
+                <tr>
+                  <td colSpan={18} style={{ ...cellStyle, textAlign: 'center', fontStyle: 'italic', fontSize: '7pt', background: '#f0f0f0', padding: '1px' }}>
+                    ↓ ↓ ↓ ↓ ↓ Quantidades para 59 refeições ↓ ↓ ↓ ↓ ↓
                   </td>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Linhas de ingredientes */}
+                {Array.from({ length: maxLinhas }).map((_, rowIdx) => {
+                  const ceiaIng = (ficha.ingredientes['ceia'] ?? [])[rowIdx]
+                  const qtdMedia = QTDE_MEDIA_DIARIA[rowIdx]
+
+                  return (
+                    <tr key={rowIdx}>
+                      {/* Desjejum */}
+                      {(() => { const ing = (ficha.ingredientes['cafe_manha'] ?? [])[rowIdx]; return <>
+                        <td style={cellStyle}>{ing?.nome ?? ''}</td>
+                        <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{ing ? ing.quantidade : ''}</td>
+                        <td style={cellStyle}>{ing?.unidade ?? ''}</td>
+                      </> })()}
+                      {/* Colação */}
+                      {(() => { const ing = (ficha.ingredientes['colacao'] ?? [])[rowIdx]; return <>
+                        <td style={cellStyle}>{ing?.nome ?? ''}</td>
+                        <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{ing ? ing.quantidade : ''}</td>
+                        <td style={cellStyle}>{ing?.unidade ?? ''}</td>
+                      </> })()}
+                      {/* Almoço */}
+                      {(() => { const ing = (ficha.ingredientes['almoco'] ?? [])[rowIdx]; return <>
+                        <td style={cellStyle}>{ing?.nome ?? ''}</td>
+                        <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{ing ? ing.quantidade : ''}</td>
+                        <td style={cellStyle}>{ing?.unidade ?? ''}</td>
+                      </> })()}
+                      {/* Lanche */}
+                      {(() => { const ing = (ficha.ingredientes['lanche_tarde'] ?? [])[rowIdx]; return <>
+                        <td style={cellStyle}>{ing?.nome ?? ''}</td>
+                        <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{ing ? ing.quantidade : ''}</td>
+                        <td style={cellStyle}>{ing?.unidade ?? ''}</td>
+                      </> })()}
+                      {/* Janta */}
+                      {(() => { const ing = (ficha.ingredientes['jantar'] ?? [])[rowIdx]; return <>
+                        <td style={cellStyle}>{ing?.nome ?? ''}</td>
+                        <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{ing ? ing.quantidade : ''}</td>
+                        <td style={cellStyle}>{ing?.unidade ?? ''}</td>
+                      </> })()}
+                      {/* Ceia + Qtde média */}
+                      <td style={cellStyle}>{ceiaIng?.nome ?? (qtdMedia && !ceiaIng ? (rowIdx === (ficha.ingredientes['ceia'] ?? []).length ? 'Qtde média diária' : qtdMedia.nome) : '')}</td>
+                      <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{ceiaIng ? ceiaIng.quantidade : (qtdMedia ? qtdMedia.quantidade : '')}</td>
+                      <td style={cellStyle}>{ceiaIng ? ceiaIng.unidade : (qtdMedia ? qtdMedia.unidade : '')}</td>
+                    </tr>
+                  )
+                })}
+
+                {/* Linha qtde média diária header */}
+                <tr>
+                  <td colSpan={15} style={{ ...cellStyle, background: '#f0f0f0' }}></td>
+                  <td colSpan={3} style={{ ...cellStyle, fontWeight: 'bold', background: '#f0f0f0', textAlign: 'center' }}>Qtde média diária</td>
+                </tr>
+                {QTDE_MEDIA_DIARIA.map((item, i) => (
+                  <tr key={i}>
+                    <td colSpan={15} style={{ ...cellStyle, borderTop: 'none' }}></td>
+                    <td style={cellStyle}>{item.nome}</td>
+                    <td style={{ ...cellStyle, textAlign: 'right' }}>{item.quantidade}</td>
+                    <td style={cellStyle}>{item.unidade}</td>
+                  </tr>
                 ))}
-              </tr>
 
-              {/* Linha observações label */}
-              <tr>
-                <td colSpan={6} style={{ border: '1px solid #000', padding: '2px 4px', fontSize: '7pt', fontFamily: 'Arial, sans-serif', background: '#f0f0f0' }}>
-                  Observacoes (por refeicao):
-                </td>
-              </tr>
-
-              {/* Linha observações */}
-              <tr>
-                {REFEICOES.map(ref => (
-                  <td key={ref.key} style={{ ...tdStyle, minHeight: '35px', fontSize: '7pt' }}>
-                    {ficha.cardapio[ref.key]?.observacoes ?? ''}
+                {/* Observações por refeição */}
+                <tr>
+                  <td colSpan={18} style={{ ...cellStyle, background: '#f0f0f0', fontWeight: 'bold', fontSize: '7pt' }}>
+                    Observações (por refeição):
                   </td>
-                ))}
-              </tr>
+                </tr>
+                <tr>
+                  {REFEICOES.map(ref => (
+                    <td key={ref.key} colSpan={3} style={{ ...cellStyle, minHeight: '30px', fontSize: '6.5pt' }}>
+                      {ficha.cardapio[ref.key]?.observacoes ?? ''}
+                    </td>
+                  ))}
+                </tr>
 
-              {/* Rodapé */}
-              <tr>
-                <td colSpan={6} style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '7pt', fontFamily: 'Arial, sans-serif' }}>
-                  <strong>Observacoes gerais:</strong> 59 refeicoes: 40 idosos + 5 creche + 11 func. Manha + 3 func. Noite
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ))}
+                {/* Observações gerais */}
+                <tr>
+                  <td colSpan={18} style={{ ...cellStyle, fontSize: '7pt' }}>
+                    <strong>Observações gerais:</strong> 59 refeições almoço: 40 idosos + 5 creche + 11 func. Manhã + 3 func. Noite. Suco: servir 150 ml por idoso (+- 7L de água filtrada e 350g de açúcar no preparo)
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
 
       <style>{`
         @media print {
           .no-print { display: none !important; }
+          aside, header { display: none !important; }
+          main { margin: 0 !important; padding: 0 !important; }
+          div[style*="marginLeft"] { margin-left: 0 !important; }
           body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          @page { size: A4 landscape; margin: 8mm; }
-          table { page-break-inside: avoid; }
+          @page { size: A4 landscape; margin: 6mm; }
         }
       `}</style>
     </div>
