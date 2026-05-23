@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { Printer } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 
@@ -69,8 +69,29 @@ export default function ImpressaoPage() {
     return desc.split('\n').map((l: string) => l.replace(/^-\s*/, '').trim()).filter(Boolean)
   }
 
+  const tdStyle: React.CSSProperties = {
+    border: '1px solid #000',
+    padding: '3px 4px',
+    verticalAlign: 'top',
+    width: '16.66%',
+    fontSize: '7.5pt',
+    fontFamily: 'Arial, sans-serif',
+  }
+
+  const thStyle: React.CSSProperties = {
+    border: '1px solid #000',
+    padding: '3px 4px',
+    textAlign: 'center',
+    fontWeight: 'bold',
+    fontSize: '7.5pt',
+    fontFamily: 'Arial, sans-serif',
+    background: '#e0e0e0',
+    width: '16.66%',
+  }
+
   return (
     <div>
+      {/* Controles */}
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E5E3DC', padding: '20px', marginBottom: '16px' }}>
           <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px' }}>Selecionar semanas</div>
@@ -108,62 +129,87 @@ export default function ImpressaoPage() {
         </div>
       </div>
 
+      {/* Fichas */}
       {fichas.map((ficha, idx) => (
-        <div key={idx} style={{ pageBreakAfter: 'always', marginBottom: '40px', fontFamily: 'Arial, sans-serif', fontSize: "7.5px", border: '1px solid #000' }}>
-          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: "9px", padding: "3px", borderBottom: '1px solid #000', background: '#f0f0f0' }}>
-            RESIDENCIAL AMAR — {ORDINAL[DIAS.findIndex(d => d.dia === ficha.dia)]} {ficha.diaLabel.toUpperCase()} DO MES — SEMANA {ficha.semana}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid #000' }}>
-            {REFEICOES.map((ref, i) => (
-              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: "3px", minHeight: "45px" }}>
-                <div style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #ccc', marginBottom: '3px', fontSize: "7px" }}>{ref.label.toUpperCase()}</div>
-                {formatDesc(ficha.cardapio[ref.key]?.descricao ?? '').map((l: string, j: number) => (
-                  <div key={j} style={{ lineHeight: 1.2 }}>- {l}</div>
+        <div key={idx} style={{ pageBreakAfter: 'always', marginBottom: '32px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            {/* Cabeçalho */}
+            <thead>
+              <tr>
+                <td colSpan={6} style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontWeight: 'bold', fontSize: '9pt', fontFamily: 'Arial, sans-serif', background: '#d0d0d0' }}>
+                  RESIDENCIAL AMAR — {ORDINAL[DIAS.findIndex(d => d.dia === ficha.dia)]} {ficha.diaLabel.toUpperCase()} DO MES — SEMANA {ficha.semana}
+                </td>
+              </tr>
+              <tr>
+                {REFEICOES.map(ref => <th key={ref.key} style={thStyle}>{ref.label.toUpperCase()}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Linha cardápio */}
+              <tr>
+                {REFEICOES.map(ref => (
+                  <td key={ref.key} style={{ ...tdStyle, minHeight: '50px' }}>
+                    {formatDesc(ficha.cardapio[ref.key]?.descricao ?? '').map((l: string, i: number) => (
+                      <div key={i} style={{ lineHeight: 1.3 }}>- {l}</div>
+                    ))}
+                  </td>
                 ))}
-              </div>
-            ))}
-          </div>
+              </tr>
 
-          <div style={{ textAlign: 'center', fontSize: "7px", borderBottom: '1px solid #000', padding: '2px', background: '#f5f5f5', fontStyle: 'italic' }}>
-            Quantidades para 59 refeicoes
-          </div>
+              {/* Divisor quantidades */}
+              <tr>
+                <td colSpan={6} style={{ border: '1px solid #000', padding: '2px', textAlign: 'center', fontSize: '7pt', fontFamily: 'Arial, sans-serif', background: '#f0f0f0', fontStyle: 'italic' }}>
+                  Quantidades para 59 refeicoes
+                </td>
+              </tr>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid #000' }}>
-            {REFEICOES.map((ref, i) => (
-              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: "3px", minHeight: "60px" }}>
-                {(ficha.ingredientes[ref.key] ?? []).map((ing: any, j: number) => (
-                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', lineHeight: 1.2, gap: '4px' }}>
-                    <span>{ing.nome}</span>
-                    <span style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>{ing.quantidade} {ing.unidade}</span>
-                  </div>
+              {/* Linha ingredientes */}
+              <tr>
+                {REFEICOES.map(ref => (
+                  <td key={ref.key} style={{ ...tdStyle, minHeight: '70px' }}>
+                    {(ficha.ingredientes[ref.key] ?? []).map((ing: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', lineHeight: 1.3, gap: '2px' }}>
+                        <span style={{ flex: 1 }}>{ing.nome}</span>
+                        <span style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{ing.quantidade} {ing.unidade}</span>
+                      </div>
+                    ))}
+                  </td>
                 ))}
-              </div>
-            ))}
-          </div>
+              </tr>
 
-          <div style={{ borderBottom: '1px solid #000', padding: '2px 4px', fontSize: "7px", background: '#f5f5f5' }}>
-            Observacoes (por refeicao):
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid #000' }}>
-            {REFEICOES.map((ref, i) => (
-              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: "3px", minHeight: "30px", fontSize: "7px", lineHeight: 1.2 }}>
-                {ficha.cardapio[ref.key]?.observacoes ?? ''}
-              </div>
-            ))}
-          </div>
+              {/* Linha observações label */}
+              <tr>
+                <td colSpan={6} style={{ border: '1px solid #000', padding: '2px 4px', fontSize: '7pt', fontFamily: 'Arial, sans-serif', background: '#f0f0f0' }}>
+                  Observacoes (por refeicao):
+                </td>
+              </tr>
 
-          <div style={{ padding: "2px 3px", fontSize: "7px" }}>
-            <strong>Observacoes gerais:</strong> 59 refeicoes: 40 idosos + 5 creche + 11 func. Manha + 3 func. Noite
-          </div>
+              {/* Linha observações */}
+              <tr>
+                {REFEICOES.map(ref => (
+                  <td key={ref.key} style={{ ...tdStyle, minHeight: '35px', fontSize: '7pt' }}>
+                    {ficha.cardapio[ref.key]?.observacoes ?? ''}
+                  </td>
+                ))}
+              </tr>
+
+              {/* Rodapé */}
+              <tr>
+                <td colSpan={6} style={{ border: '1px solid #000', padding: '3px 4px', fontSize: '7pt', fontFamily: 'Arial, sans-serif' }}>
+                  <strong>Observacoes gerais:</strong> 59 refeicoes: 40 idosos + 5 creche + 11 func. Manha + 3 func. Noite
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       ))}
 
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          body { margin: 0; }
+          body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           @page { size: A4 landscape; margin: 8mm; }
+          table { page-break-inside: avoid; }
         }
       `}</style>
     </div>
