@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import {
-  LayoutDashboard, ChefHat, CalendarDays, BookOpen,
+  LayoutDashboard, ChefHat, CalendarDays, BookOpen, Printer,
   Package, ShoppingCart, BarChart3, Settings, Menu, LogOut, Users
 } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
@@ -28,6 +28,7 @@ const NAV_ADMIN = [
   ]},
   { section: 'Gestão', items: [
     { href: '/relatorios',    label: 'Relatórios',       icon: BarChart3 },
+    { href: '/impressao',     label: 'Impressão',        icon: Printer },
     { href: '/configuracoes', label: 'Configurações',    icon: Settings },
   ]},
 ]
@@ -177,7 +178,7 @@ function PageTitle({ pathname }: { pathname: string }) {
     '/dashboard': 'Dashboard', '/producao': 'Produção do Dia',
     '/cardapio': 'Cardápio Semanal', '/preparacoes': 'Preparações',
     '/estoque': 'Controle de Estoque', '/compras': 'Lista de Compras',
-    '/relatorios': 'Relatórios', '/configuracoes': 'Configurações',
+    '/relatorios': 'Relatórios', '/impressao': 'Impressão', '/configuracoes': 'Configurações',
   }
   return <span style={{ fontSize: '15px', fontWeight: 500 }}>{titles[pathname] ?? 'Residencial Amar'}</span>
 }
