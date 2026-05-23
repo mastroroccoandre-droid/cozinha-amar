@@ -31,12 +31,17 @@ export default function ComprasPage() {
       .from('preparacao_ingredientes')
       .select('nome_ingrediente, unidade')
       .order('nome_ingrediente')
-    // Deduplica por nome
+    // Converte para maior unidade e deduplica
+    function maiorUnidade(u: string): string {
+      if (u === 'g') return 'kg'
+      if (u === 'ml') return 'L'
+      return u
+    }
     const mapa = new Map<string, string>()
     ;(data ?? []).forEach((i: any) => {
-      if (!mapa.has(i.nome_ingrediente)) mapa.set(i.nome_ingrediente, i.unidade)
+      if (!mapa.has(i.nome_ingrediente)) mapa.set(i.nome_ingrediente, maiorUnidade(i.unidade))
     })
-    setIngredientes(Array.from(mapa.entries()).map(([nome, unidade]) => ({ nome, unidade })))
+    setIngredientes(Array.from(mapa.entries()).map(([nome, unidade]) => ({ nome, unidade })).sort((a, b) => a.nome.localeCompare(b.nome)))
   }
 
   async function carregar() {
