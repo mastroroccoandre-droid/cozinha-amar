@@ -109,31 +109,31 @@ export default function ImpressaoPage() {
       </div>
 
       {fichas.map((ficha, idx) => (
-        <div key={idx} style={{ pageBreakAfter: 'always', marginBottom: '40px', fontFamily: 'Arial, sans-serif', fontSize: '9px', border: '1px solid #000' }}>
-          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '11px', padding: '4px', borderBottom: '1px solid #000', background: '#f0f0f0' }}>
+        <div key={idx} style={{ pageBreakAfter: 'always', marginBottom: '40px', fontFamily: 'Arial, sans-serif', fontSize: "7.5px", border: '1px solid #000' }}>
+          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: "9px", padding: "3px", borderBottom: '1px solid #000', background: '#f0f0f0' }}>
             RESIDENCIAL AMAR — {ORDINAL[DIAS.findIndex(d => d.dia === ficha.dia)]} {ficha.diaLabel.toUpperCase()} DO MES — SEMANA {ficha.semana}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid #000' }}>
             {REFEICOES.map((ref, i) => (
-              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: '4px', minHeight: '60px' }}>
-                <div style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #ccc', marginBottom: '3px', fontSize: '8px' }}>{ref.label.toUpperCase()}</div>
+              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: "3px", minHeight: "45px" }}>
+                <div style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #ccc', marginBottom: '3px', fontSize: "7px" }}>{ref.label.toUpperCase()}</div>
                 {formatDesc(ficha.cardapio[ref.key]?.descricao ?? '').map((l: string, j: number) => (
-                  <div key={j} style={{ lineHeight: 1.3 }}>- {l}</div>
+                  <div key={j} style={{ lineHeight: 1.2 }}>- {l}</div>
                 ))}
               </div>
             ))}
           </div>
 
-          <div style={{ textAlign: 'center', fontSize: '8px', borderBottom: '1px solid #000', padding: '2px', background: '#f5f5f5', fontStyle: 'italic' }}>
+          <div style={{ textAlign: 'center', fontSize: "7px", borderBottom: '1px solid #000', padding: '2px', background: '#f5f5f5', fontStyle: 'italic' }}>
             Quantidades para 59 refeicoes
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid #000' }}>
             {REFEICOES.map((ref, i) => (
-              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: '4px', minHeight: '80px' }}>
+              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: "3px", minHeight: "60px" }}>
                 {(ficha.ingredientes[ref.key] ?? []).map((ing: any, j: number) => (
-                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', lineHeight: 1.4, gap: '4px' }}>
+                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', lineHeight: 1.2, gap: '4px' }}>
                     <span>{ing.nome}</span>
                     <span style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>{ing.quantidade} {ing.unidade}</span>
                   </div>
@@ -142,18 +142,18 @@ export default function ImpressaoPage() {
             ))}
           </div>
 
-          <div style={{ borderBottom: '1px solid #000', padding: '2px 4px', fontSize: '8px', background: '#f5f5f5' }}>
+          <div style={{ borderBottom: '1px solid #000', padding: '2px 4px', fontSize: "7px", background: '#f5f5f5' }}>
             Observacoes (por refeicao):
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid #000' }}>
             {REFEICOES.map((ref, i) => (
-              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: '4px', minHeight: '40px', fontSize: '8px', lineHeight: 1.3 }}>
+              <div key={ref.key} style={{ borderRight: i < 5 ? '1px solid #000' : 'none', padding: "3px", minHeight: "30px", fontSize: "7px", lineHeight: 1.2 }}>
                 {ficha.cardapio[ref.key]?.observacoes ?? ''}
               </div>
             ))}
           </div>
 
-          <div style={{ padding: '3px 4px', fontSize: '8px' }}>
+          <div style={{ padding: "2px 3px", fontSize: "7px" }}>
             <strong>Observacoes gerais:</strong> 59 refeicoes: 40 idosos + 5 creche + 11 func. Manha + 3 func. Noite
           </div>
         </div>
