@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, AlertTriangle, Clock, TrendingUp, ChefHat, CheckCircle2 } from 'lucide-react'
+import { Users, AlertTriangle, TrendingUp, ChefHat } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import { MetricCard, Alert, SectionHeader, Badge } from '@/components/ui'
-import { formatDate, formatBRL, getDiasParaVencer, getStatusEstoque } from '@/lib/utils'
+import { getStatusEstoque } from '@/lib/utils'
 import type { Produto, Cardapio } from '@/types'
 
 const REFEICAO_LABELS: Record<string, string> = {
@@ -31,9 +31,8 @@ const DIAS = [
 interface DashboardData {
   numIdosos: number
   produtosBaixos: Produto[]
-  produtosVencendo: Produto[]
   cardapioSemana: Cardapio[]
-  custoMensal: number
+  totalProdutos: number
 }
 
 function limparDescricao(desc: string) {
@@ -60,12 +59,8 @@ export default function DashboardPage() {
       setData({
         numIdosos: configRes.data?.num_idosos ?? 42,
         produtosBaixos: produtos.filter(p => getStatusEstoque(p) !== 'ok'),
-        produtosVencendo: produtos.filter(p => {
-          const dias = getDiasParaVencer(p.data_validade)
-          return dias !== null && dias >= 0 && dias <= 7
-        }),
         cardapioSemana: cardapioRes.data ?? [],
-        custoMensal: 18420,
+        totalProdutos: produtos.length,
       })
       setLoading(false)
     }
@@ -84,17 +79,29 @@ export default function DashboardPage() {
   }
 
   if (!data) return null
-  const { numIdosos, produtosBaixos, produtosVencendo } = data
+  const { numIdosos, produtosBaixos } = data
 
   return (
     <div style={{ maxWidth: '1100px' }}>
 
       {/* ── MÉTRICAS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
         <MetricCard label="Idosos ativos" value={numIdosos} sub="residentes" icon={<Users size={13} />} />
-        <MetricCard label="Estoque baixo" value={produtosBaixos.length} sub="itens abaixo do mínimo" icon={<AlertTriangle size={13} />} color={produtosBaixos.length > 0 ? '#BA7517' : undefined} onClick={() => router.push('/estoque')} />
-        <MetricCard label="Próx. vencer" value={produtosVencendo.length} sub="vencendo em 7 dias" icon={<Clock size={13} />} color={produtosVencendo.length > 0 ? '#A32D2D' : undefined} onClick={() => router.push('/estoque')} />
-        <MetricCard label="Custo mensal" value={formatBRL(data.custoMensal)} sub="alimentação" icon={<TrendingUp size={13} />} />
+        <MetricCard
+          label="Estoque baixo"
+          value={produtosBaixos.length}
+          sub="itens abaixo do mínimo"
+          icon={<AlertTriangle size={13} />}
+          color={produtosBaixos.length > 0 ? '#BA7517' : undefined}
+          onClick={() => router.push('/estoque')}
+        />
+        <MetricCard
+          label="Total no estoque"
+          value={data.totalProdutos}
+          sub="produtos cadastrados"
+          icon={<TrendingUp size={13} />}
+          onClick={() => router.push('/estoque')}
+        />
       </div>
 
       {/* ── LINHA 2: ALERTAS + PRODUÇÃO ── */}
@@ -158,7 +165,6 @@ export default function DashboardPage() {
 
             return (
               <div key={dia.short} style={{ background: '#FAFAF8', borderRadius: '10px', padding: '10px', border: '1px solid #E5E3DC' }}>
-                {/* Dia */}
                 <div style={{
                   textAlign: 'center',
                   fontSize: '11px',
@@ -174,7 +180,6 @@ export default function DashboardPage() {
                   {dia.short}
                 </div>
 
-                {/* Almoço */}
                 <div style={{ marginBottom: '8px' }}>
                   <div style={{ fontSize: '9px', color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px', fontWeight: 600 }}>Almoço</div>
                   {almocoLinhas.slice(0, 3).map((linha, i) => (
@@ -187,10 +192,8 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Divisor */}
                 <div style={{ height: '1px', background: '#E5E3DC', marginBottom: '8px' }} />
 
-                {/* Jantar */}
                 <div>
                   <div style={{ fontSize: '9px', color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px', fontWeight: 600 }}>Jantar</div>
                   {jantarLinhas.slice(0, 2).map((linha, i) => (
