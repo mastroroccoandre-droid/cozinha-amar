@@ -52,10 +52,12 @@ export default function ProducaoPage() {
       .eq('dia_semana', diaSemana)
 
     // Busca preparações com ingredientes para este dia/semana
+    // Formato do nome: "Desjejum Sem4/Dia5", "Almoço Sem4/Dia5", etc
+    const sufixo = `Sem${semana}/Dia${diaSemana}`
     const { data: preparacoes } = await supabase
       .from('preparacoes')
       .select('*, ingredientes:preparacao_ingredientes(*)')
-      .ilike('nome', `%Sem${semana}/Dia${diaSemana}%`)
+      .like('nome', `%${sufixo}`)
 
     const refeicoesData: RefeicaoProducao[] = REFEICAO_ORDER.map((tipo) => {
       const cardapioItem = cardapioItems?.find((c: any) => c.refeicao === tipo)
