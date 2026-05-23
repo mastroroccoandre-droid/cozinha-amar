@@ -39,24 +39,20 @@ export default function ProducaoPage() {
   const carregarProducao = useCallback(async () => {
     const supabase = getSupabase()
 
-    // Busca config
     const { data: config } = await supabase.from('configuracoes').select('num_idosos').single()
     const nIdosos = config?.num_idosos ?? 42
     setNumIdosos(nIdosos)
 
-    // Busca cardápio do dia
     const { data: cardapioItems } = await supabase
       .from('cardapio')
       .select('*')
       .eq('semana', semana)
       .eq('dia_semana', diaSemana)
 
-    // Busca todas as preparações com ingredientes que contenham o padrão do dia
     const { data: todasPreparacoes } = await supabase
       .from('preparacoes')
       .select('*, ingredientes:preparacao_ingredientes(*)')
     
-    // Filtra pelo padrão Sem{n}/Dia{n} no nome
     const padrao = `Sem${semana}/Dia${diaSemana}`
     const preparacoes = (todasPreparacoes ?? []).filter((p: any) => p.nome.includes(padrao))
 
@@ -64,18 +60,15 @@ export default function ProducaoPage() {
       const cardapioItem = cardapioItems?.find((c: any) => c.refeicao === tipo)
       const prep = preparacoes?.find((p: any) => p.tipo_refeicao === tipo)
 
-      // Monta lista de ingredientes — sempre prioriza a preparação com quantidades reais
       let ingredientes: Ingrediente[] = []
 
       if (prep && prep.ingredientes && prep.ingredientes.length > 0) {
-        // Usa ingredientes da preparação com quantidades reais do Excel
         ingredientes = prep.ingredientes.map((ing: any) => ({
           nome: ing.nome_ingrediente,
           quantidade: Number(ing.quantidade_por_idoso) || 0,
           unidade: ing.unidade || '',
         }))
       } else {
-        // Fallback: extrai nomes do cardápio sem quantidade
         const desc = cardapioItem?.descricao || ''
         const linhas = desc.split('\n').map((l: string) => l.replace(/^-\s*/, '').trim()).filter(Boolean)
         ingredientes = linhas.map((nome: string) => ({ nome, quantidade: 0, unidade: '' }))
@@ -165,7 +158,6 @@ export default function ProducaoPage() {
       {refeicoes.map((ref, refIdx) => (
         <div key={ref.tipo} style={{ marginBottom: '20px' }}>
 
-          {/* Header da refeição */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
             {ref.confirmada
               ? <CheckCircle2 size={18} style={{ color: '#7B9E6B' }} />
@@ -177,66 +169,45 @@ export default function ProducaoPage() {
             </span>
           </div>
 
-          {/* Card */}
           <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: ref.confirmada ? 0.75 : 1 }}>
 
-            {/* Descrição geral */}
             {ref.descricao && (
               <div style={{ padding: '10px 16px', background: '#F8F6F2', fontSize: '12px', color: '#5F5E5A', borderBottom: '1px solid #E5E3DC' }}>
                 📋 {ref.descricao.split('\n').map(l => l.replace(/^-\s*/, '')).filter(Boolean).join(' · ')}
               </div>
             )}
 
-            {/* Ingredientes com quantidades */}
             {ref.ingredientes.length > 0 && (
               <div style={{ padding: '0' }}>
-                {/* Cabeçalho da tabela */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 60px', padding: '6px 16px', background: '#F8F6F2', borderBottom: '1px solid #E5E3DC', fontSize: '10px', fontWeight: 600, color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', padding: '6px 16px', background: '#F8F6F2', borderBottom: '1px solid #E5E3DC', fontSize: '10px', fontWeight: 600, color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   <span>Ingrediente</span>
-                  <span style={{ textAlign: 'right' }}>Qtd/refeição</span>
-                  <span style={{ textAlign: 'right' }}>Total</span>
+                  <span style={{ textAlign: 'right' }}>Quantidade</span>
                 </div>
 
-                {ref.ingredientes.map((ing, i) => {
-                  const total = ing.quantidade > 0 ? (ing.quantidade * numIdosos) : null
-                  const totalFormatado = total
-                    ? total >= 1000 && ing.unidade === 'g'
-                      ? `${(total / 1000).toFixed(1)} kg`
-                      : total >= 1000 && ing.unidade === 'ml'
-                        ? `${(total / 1000).toFixed(1)} L`
-                        : `${total % 1 === 0 ? total : total.toFixed(1)} ${ing.unidade}`
-                    : '—'
-
-                  return (
-                    <div key={i} style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 100px 60px',
-                      padding: '9px 16px',
-                      borderBottom: i < ref.ingredientes.length - 1 ? '1px solid #F1EFE8' : 'none',
-                      fontSize: '13px',
-                      alignItems: 'center',
-                    }}>
-                      <span style={{ color: '#2C2C2A', fontWeight: 500 }}>{ing.nome}</span>
-                      <span style={{ textAlign: 'right', color: '#5F5E5A' }}>
-                        {ing.quantidade > 0 ? `${ing.quantidade} ${ing.unidade}` : '—'}
-                      </span>
-                      <span style={{ textAlign: 'right', color: '#7B9E6B', fontWeight: 600 }}>
-                        {totalFormatado}
-                      </span>
-                    </div>
-                  )
-                })}
+                {ref.ingredientes.map((ing, i) => (
+                  <div key={i} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 120px',
+                    padding: '9px 16px',
+                    borderBottom: i < ref.ingredientes.length - 1 ? '1px solid #F1EFE8' : 'none',
+                    fontSize: '13px',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ color: '#2C2C2A', fontWeight: 500 }}>{ing.nome}</span>
+                    <span style={{ textAlign: 'right', color: '#5F5E5A' }}>
+                      {ing.quantidade > 0 ? `${ing.quantidade} ${ing.unidade}` : '—'}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Observações */}
             {ref.observacoes && (
               <div style={{ padding: '8px 16px', background: '#FCEEF0', fontSize: '12px', color: '#9A4A4A', borderTop: '1px solid #E5E3DC' }}>
                 💡 {ref.observacoes}
               </div>
             )}
 
-            {/* Ações */}
             {!ref.confirmada ? (
               <div style={{ padding: '10px 14px', background: '#F8F6F2', display: 'flex', gap: '8px', borderTop: '1px solid #E5E3DC' }}>
                 <button
@@ -263,7 +234,6 @@ export default function ProducaoPage() {
         </div>
       ))}
 
-      {/* Modal Perda */}
       <Modal
         open={modalPerda.open}
         onClose={() => setModalPerda({ open: false })}
