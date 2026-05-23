@@ -33,7 +33,9 @@ export default function ProducaoPage() {
   const [refeicoes, setRefeicoes] = useState<RefeicaoProducao[]>([])
   const [numIdosos, setNumIdosos] = useState(42)
   const [loading, setLoading] = useState(true)
-  const [modalPerda, setModalPerda] = useState<{ open: boolean; refeicao?: string }>({ open: false })
+  const [modalPerda, setModalPerda] = useState<{ open: boolean; refeicao?: RefeicaoTipo }>({ open: false })
+  const [perda, setPerda] = useState({ nome_item: '', quantidade: '', unidade: 'kg', motivo: 'Preparação excedente', observacao: '' })
+  const [salvandoPerda, setSalvandoPerda] = useState(false)
   const [salvando, setSalvando] = useState(false)
 
   const carregarProducao = useCallback(async () => {
@@ -106,6 +108,26 @@ export default function ProducaoPage() {
       updated[refIdx] = { ...updated[refIdx], ingredientes: ings }
       return updated
     })
+  }
+
+  async function salvarPerda() {
+    if (!perda.nome_item.trim() || !modalPerda.refeicao) return toast.error('Informe o item')
+    setSalvandoPerda(true)
+    const supabase = getSupabase()
+    const dataHoje = hoje.toISOString().split('T')[0]
+    await supabase.from('perdas').insert({
+      data: dataHoje,
+      refeicao: modalPerda.refeicao,
+      nome_item: perda.nome_item,
+      quantidade: parseFloat(perda.quantidade) || 0,
+      unidade: perda.unidade,
+      motivo: perda.motivo,
+      observacao: perda.observacao,
+    })
+    toast.success('Perda registrada!')
+    setModalPerda({ open: false })
+    setPerda({ nome_item: '', quantidade: '', unidade: 'kg', motivo: 'Preparação excedente', observacao: '' })
+    setSalvandoPerda(false)
   }
 
   async function confirmarRefeicao(refIdx: number) {
@@ -308,7 +330,7 @@ export default function ProducaoPage() {
                   <CheckCircle2 size={14} />
                   Confirmar refeição
                 </button>
-                <button className="btn btn-sm" onClick={() => setModalPerda({ open: true, refeicao: ref.tipo })}>
+                <button className="btn btn-sm" onClick={() => { setModalPerda({ open: true, refeicao: ref.tipo }); setPerda({ nome_item: '', quantidade: '', unidade: 'kg', motivo: 'Preparação excedente', observacao: '' }) }}>
                   <AlertTriangle size={13} />
                   Perda
                 </button>
@@ -327,25 +349,34 @@ export default function ProducaoPage() {
       <Modal
         open={modalPerda.open}
         onClose={() => setModalPerda({ open: false })}
-        title="Registrar perda"
+        title={\}
+        size="sm"
         footer={
           <>
             <button className="btn btn-sm" onClick={() => setModalPerda({ open: false })}>Cancelar</button>
-            <button className="btn btn-sm btn-primary" onClick={() => { setModalPerda({ open: false }); toast.success('Perda registrada!') }}>Salvar</button>
+            <button className="btn btn-sm btn-primary" onClick={salvarPerda} disabled={salvandoPerda}>{salvandoPerda ? 'Salvando...' : '✓ Registrar perda'}</button>
           </>
         }
       >
         <div className="input-group">
-          <label className="input-label">Item</label>
-          <input className="input" placeholder="Nome do item perdido" />
+          <label className="input-label">Item *</label>
+          <input className="input" value={perda.nome_item} onChange={(e) => setPerda(p => ({ ...p, nome_item: e.target.value }))} placeholder="Nome do item perdido" />
         </div>
-        <div className="input-group">
-          <label className="input-label">Quantidade</label>
-          <input type="number" className="input" placeholder="0" min={0} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div className="input-group">
+            <label className="input-label">Quantidade</label>
+            <input type="number" className="input" value={perda.quantidade} onChange={(e) => setPerda(p => ({ ...p, quantidade: e.target.value }))} placeholder="0" min={0} />
+          </div>
+          <div className="input-group">
+            <label className="input-label">Unidade</label>
+            <select className="input" value={perda.unidade} onChange={(e) => setPerda(p => ({ ...p, unidade: e.target.value }))}>
+              <option>kg</option><option>g</option><option>L</option><option>ml</option><option>un</option><option>pct</option>
+            </select>
+          </div>
         </div>
         <div className="input-group">
           <label className="input-label">Motivo</label>
-          <select className="input">
+          <select className="input" value={perda.motivo} onChange={(e) => setPerda(p => ({ ...p, motivo: e.target.value }))}>
             <option>Preparação excedente</option>
             <option>Recusa do idoso</option>
             <option>Acidente / queda</option>
@@ -354,7 +385,7 @@ export default function ProducaoPage() {
         </div>
         <div className="input-group">
           <label className="input-label">Observação</label>
-          <textarea className="input" rows={2} placeholder="Detalhe se necessário..." />
+          <textarea className="input" rows={2} value={perda.observacao} onChange={(e) => setPerda(p => ({ ...p, observacao: e.target.value }))} placeholder="Detalhe se necessário..." />
         </div>
       </Modal>
     </div>
