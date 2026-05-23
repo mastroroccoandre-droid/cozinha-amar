@@ -119,10 +119,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Footer */}
       <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(123,158,107,0.2)', borderRadius: '8px', marginBottom: '10px' }}>
-          <Users size={14} style={{ color: '#9DB98F' }} />
-          <span style={{ color: '#9DB98F', fontSize: '12px', fontWeight: 500 }}>{config?.num_idosos ?? 42} idosos ativos</span>
-        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(232,160,160,0.2)', color: '#F0BABA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 500, flexShrink: 0 }}>
             {usuario?.nome?.split(' ').map((p: string) => p[0]).join('').substring(0, 2) ?? 'US'}
