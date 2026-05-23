@@ -425,7 +425,7 @@ export default function PreparacoesPage() {
         {/* Ingredientes */}
         <div style={{ marginTop: '16px', marginBottom: '8px' }}>
           <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '10px' }}>
-            Ingredientes <span style={{ fontSize: '12px', color: '#888780', fontWeight: 400' }}>(quantidade por idoso)</span>
+            Ingredientes <span style={{ fontSize: '12px', color: '#888780', fontWeight: 400 }}>(quantidade por idoso)</span>
           </div>
 
           {form.ingredientes.map((ing, idx) => (
