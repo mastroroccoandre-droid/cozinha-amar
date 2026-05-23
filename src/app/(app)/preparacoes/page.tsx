@@ -9,6 +9,30 @@ import { useAppStore } from '@/lib/store'
 import toast from 'react-hot-toast'
 import type { Preparacao, PreparacaoIngrediente, RefeicaoTipo } from '@/types'
 
+
+const DIAS_SEMANA: Record<number, string> = {
+  0: 'Segunda', 1: 'Terça', 2: 'Quarta', 3: 'Quinta',
+  4: 'Sexta', 5: 'Sábado', 6: 'Domingo',
+}
+
+function formatarNomePreparacao(nome: string): string {
+  const match = nome.match(/^(.+?)\s+Sem(\d+)\/Dia(\d+)$/)
+  if (match) {
+    const tipo = match[1]
+    const sem = match[2]
+    const dia = parseInt(match[3])
+    const diaNome = DIAS_SEMANA[dia] ?? `Dia ${dia}`
+    return `${tipo} — ${diaNome}, Sem ${sem}`
+  }
+  return nome
+}
+
+function formatarQuantidade(qtd: number, unidade: string): string {
+  if (unidade === 'g' && qtd >= 1000) return `${(qtd/1000).toFixed(qtd%1000===0?0:1)} kg`
+  if (unidade === 'ml' && qtd >= 1000) return `${(qtd/1000).toFixed(qtd%1000===0?0:1)} L`
+  return `${qtd % 1 === 0 ? qtd : qtd.toFixed(1)} ${unidade}`
+}
+
 const DIAS: { label: string; dia: number }[] = [
   { label: 'Segunda', dia: 0 },
   { label: 'Terça', dia: 1 },
@@ -257,7 +281,7 @@ export default function PreparacoesPage() {
         <Modal
           open={!!detalhe}
           onClose={() => setDetalhe(null)}
-          title={detalhe.nome}
+          title={formatarNomePreparacao(detalhe.nome)}
           size="md"
           footer={<button className="btn btn-sm" onClick={() => setDetalhe(null)}>Fechar</button>}
         >
@@ -271,7 +295,7 @@ export default function PreparacoesPage() {
               {detalhe.ingredientes.map((ing) => (
                 <div key={ing.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #E5E3DC', fontSize: '13px' }}>
                   <span>{ing.nome_ingrediente}</span>
-                  <span style={{ fontWeight: 500 }}>{ing.quantidade_por_idoso} {ing.unidade}</span>
+                  <span style={{ fontWeight: 500 }}>{formatarQuantidade(ing.quantidade_por_idoso, ing.unidade)}</span>
                 </div>
               ))}
             </>
