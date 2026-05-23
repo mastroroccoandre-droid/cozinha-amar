@@ -56,6 +56,16 @@ export default function ProducaoPage() {
     const padrao = `Sem${semana}/Dia${diaSemana}`
     const preparacoes = (todasPreparacoes ?? []).filter((p: any) => p.nome.includes(padrao))
 
+    // Busca refeições já confirmadas hoje
+    const dataHoje = hoje.toISOString().split('T')[0]
+    const { data: confirmadas } = await supabase
+      .from('producao_diaria')
+      .select('refeicao')
+      .eq('data', dataHoje)
+      .eq('status', 'concluido')
+
+    const refConfirmadasHoje = new Set((confirmadas ?? []).map((c: any) => c.refeicao))
+
     const refeicoesData: RefeicaoProducao[] = REFEICAO_ORDER.map((tipo) => {
       const cardapioItem = cardapioItems?.find((c: any) => c.refeicao === tipo)
       const prep = preparacoes?.find((p: any) => p.tipo_refeicao === tipo)
@@ -79,7 +89,7 @@ export default function ProducaoPage() {
         descricao: cardapioItem?.descricao ?? '',
         observacoes: cardapioItem?.observacoes ?? '',
         ingredientes,
-        confirmada: false,
+        confirmada: refConfirmadasHoje.has(tipo),
       }
     })
 
@@ -95,7 +105,8 @@ export default function ProducaoPage() {
     const ref = refeicoes[refIdx]
     const dataHoje = hoje.toISOString().split('T')[0]
 
-    await supabase.from('producao_diaria').upsert({
+    // Registra produção
+    const { data: producao } = await supabase.from('producao_diaria').upsert({
       data: dataHoje,
       semana_cardapio: semana,
       dia_semana: diaSemana,
@@ -104,7 +115,22 @@ export default function ProducaoPage() {
       num_idosos: numIdosos,
       status: 'concluido',
       confirmado_em: new Date().toISOString(),
-    })
+    }, { onConflict: 'data,refeicao' }).select().single()
+
+    // Registra ingredientes consumidos
+    if (producao && ref.ingredientes.length > 0) {
+      const ingsValidos = ref.ingredientes.filter(i => i.quantidade > 0)
+      if (ingsValidos.length > 0) {
+        await supabase.from('producao_ingredientes').insert(
+          ingsValidos.map(ing => ({
+            producao_id: producao.id,
+            nome_ingrediente: ing.nome,
+            quantidade: ing.quantidade,
+            unidade: ing.unidade,
+          }))
+        )
+      }
+    }
 
     setRefeicoes((prev) => {
       const updated = [...prev]
@@ -234,6 +260,7 @@ export default function ProducaoPage() {
         </div>
       ))}
 
+      {/* Modal Perda */}
       <Modal
         open={modalPerda.open}
         onClose={() => setModalPerda({ open: false })}
@@ -258,7 +285,6 @@ export default function ProducaoPage() {
           <select className="input">
             <option>Preparação excedente</option>
             <option>Recusa do idoso</option>
-            <option>Validade vencida</option>
             <option>Acidente / queda</option>
             <option>Outro</option>
           </select>
