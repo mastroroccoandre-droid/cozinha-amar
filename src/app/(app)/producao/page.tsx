@@ -117,10 +117,11 @@ export default function ProducaoPage() {
       confirmado_em: new Date().toISOString(),
     }, { onConflict: 'data,refeicao' }).select().single()
 
-    // Registra ingredientes consumidos
+    // Registra ingredientes consumidos e desconta do estoque
     if (producao && ref.ingredientes.length > 0) {
       const ingsValidos = ref.ingredientes.filter(i => i.quantidade > 0)
       if (ingsValidos.length > 0) {
+        // Salva no historico de producao
         await supabase.from('producao_ingredientes').insert(
           ingsValidos.map(ing => ({
             producao_id: producao.id,
@@ -129,6 +130,50 @@ export default function ProducaoPage() {
             unidade: ing.unidade,
           }))
         )
+
+        // Desconta do estoque via produto_id
+        for (const ing of ingsValidos) {
+          // Busca produto vinculado
+          const { data: ingData } = await supabase
+            .from('preparacao_ingredientes')
+            .select('produto_id')
+            .eq('nome_ingrediente', ing.nome)
+            .limit(1)
+            .single()
+
+          if (!ingData?.produto_id) continue
+
+          // Busca saldo atual
+          const { data: produto } = await supabase
+            .from('produtos')
+            .select('quantidade_atual, unidade')
+            .eq('id', ingData.produto_id)
+            .single()
+
+          if (!produto) continue
+
+          // Converte unidade se necessario (g->kg, ml->L)
+          let qtdDescontar = ing.quantidade
+          if (ing.unidade === 'g' && produto.unidade === 'kg') qtdDescontar = ing.quantidade / 1000
+          if (ing.unidade === 'ml' && produto.unidade === 'L') qtdDescontar = ing.quantidade / 1000
+
+          const novaQtd = Math.max(0, produto.quantidade_atual - qtdDescontar)
+
+          // Atualiza estoque
+          await supabase.from('produtos').update({
+            quantidade_atual: novaQtd
+          }).eq('id', ingData.produto_id)
+
+          // Registra movimentacao
+          await supabase.from('movimentacoes_estoque').insert({
+            produto_id: ingData.produto_id,
+            tipo: 'saida',
+            quantidade: qtdDescontar,
+            quantidade_anterior: produto.quantidade_atual,
+            quantidade_posterior: novaQtd,
+            motivo: `Refeição: ${REFEICAO_LABELS[ref.tipo]} — ${dataHoje}`,
+          })
+        }
       }
     }
 
