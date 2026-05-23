@@ -23,25 +23,25 @@ export default function ComprasPage() {
   const [novoItem, setNovoItem] = useState({ nome: '', quantidade: '', unidade: 'kg', categoria: 'secos' as CategoriaAlimento, observacao: '' })
   const [precoItem, setPrecoItem] = useState({ preco: '', fornecedor: '' })
   const [salvando, setSalvando] = useState(false)
-  const [ingredientes, setIngredientes] = useState<{nome: string, unidade: string}[]>([])
+  const [ingredientes, setIngredientes] = useState<{nome: string, unidade: string, categoria: string}[]>([])
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('')
 
   async function carregarIngredientes() {
     const supabase = getSupabase()
     const { data } = await supabase
       .from('preparacao_ingredientes')
-      .select('nome_ingrediente, unidade')
+      .select('nome_ingrediente, unidade, categoria')
       .order('nome_ingrediente')
-    // Converte para maior unidade e deduplica
     function maiorUnidade(u: string): string {
       if (u === 'g') return 'kg'
       if (u === 'ml') return 'L'
       return u
     }
-    const mapa = new Map<string, string>()
+    const mapa = new Map<string, {unidade: string, categoria: string}>()
     ;(data ?? []).forEach((i: any) => {
-      if (!mapa.has(i.nome_ingrediente)) mapa.set(i.nome_ingrediente, maiorUnidade(i.unidade))
+      if (!mapa.has(i.nome_ingrediente)) mapa.set(i.nome_ingrediente, { unidade: maiorUnidade(i.unidade), categoria: i.categoria ?? 'outros' })
     })
-    setIngredientes(Array.from(mapa.entries()).map(([nome, unidade]) => ({ nome, unidade })).sort((a, b) => a.nome.localeCompare(b.nome)))
+    setIngredientes(Array.from(mapa.entries()).map(([nome, v]) => ({ nome, unidade: v.unidade, categoria: v.categoria })).sort((a, b) => a.nome.localeCompare(b.nome)))
   }
 
   async function carregar() {
@@ -302,13 +302,25 @@ export default function ComprasPage() {
         }
       >
         <div className="input-group">
+          <label className="input-label">Categoria</label>
+          <select className="input" value={filtroCategoria} onChange={(e) => { setFiltroCategoria(e.target.value); setNovoItem(f => ({ ...f, nome: '', unidade: 'kg' })) }}>
+            <option value="">Todas as categorias</option>
+            <option value="carnes">Carnes</option>
+            <option value="hortifruti">Hortifruti</option>
+            <option value="secos">Secos</option>
+            <option value="laticinios">Laticínios</option>
+            <option value="bebidas">Bebidas</option>
+            <option value="outros">Outros</option>
+          </select>
+        </div>
+        <div className="input-group">
           <label className="input-label">Produto *</label>
           <select className="input" value={novoItem.nome} onChange={(e) => {
             const ing = ingredientes.find(i => i.nome === e.target.value)
-            setNovoItem(f => ({ ...f, nome: e.target.value, unidade: ing?.unidade ?? f.unidade }))
+            setNovoItem(f => ({ ...f, nome: e.target.value, unidade: ing?.unidade ?? f.unidade, categoria: (ing?.categoria ?? f.categoria) as CategoriaAlimento }))
           }}>
             <option value="">Selecione um produto...</option>
-            {ingredientes.map((ing) => (
+            {ingredientes.filter(i => !filtroCategoria || i.categoria === filtroCategoria).map((ing) => (
               <option key={ing.nome} value={ing.nome}>{ing.nome}</option>
             ))}
           </select>
