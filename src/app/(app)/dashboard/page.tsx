@@ -2,28 +2,45 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Users, AlertTriangle, Clock, TrendingUp,
-  ShoppingCart, Package, ChefHat, ArrowRight
-} from 'lucide-react'
+import { Users, AlertTriangle, Clock, TrendingUp, ChefHat, CheckCircle2 } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
-import {
-  MetricCard, Alert, SectionHeader, Badge, ProgressBar
-} from '@/components/ui'
-import {
-  formatDate, formatBRL, getDiasParaVencer,
-  getStatusEstoque, REFEICAO_LABELS, DIAS_SEMANA_SHORT
-} from '@/lib/utils'
+import { MetricCard, Alert, SectionHeader, Badge } from '@/components/ui'
+import { formatDate, formatBRL, getDiasParaVencer, getStatusEstoque } from '@/lib/utils'
 import type { Produto, Cardapio } from '@/types'
-import { REFEICAO_ORDER } from '@/types'
+
+const REFEICAO_LABELS: Record<string, string> = {
+  cafe_manha: 'Café da manhã',
+  colacao: 'Colação',
+  almoco: 'Almoço',
+  lanche_tarde: 'Lanche',
+  jantar: 'Jantar',
+  ceia: 'Ceia',
+}
+
+const REFEICAO_ORDER = ['cafe_manha', 'colacao', 'almoco', 'lanche_tarde', 'jantar', 'ceia']
+const DIAS = [
+  { short: 'Seg', label: 'Segunda' },
+  { short: 'Ter', label: 'Terça' },
+  { short: 'Qua', label: 'Quarta' },
+  { short: 'Qui', label: 'Quinta' },
+  { short: 'Sex', label: 'Sexta' },
+  { short: 'Sáb', label: 'Sábado' },
+  { short: 'Dom', label: 'Domingo' },
+]
 
 interface DashboardData {
   numIdosos: number
   produtosBaixos: Produto[]
   produtosVencendo: Produto[]
   cardapioSemana: Cardapio[]
-  totalComprasPendentes: number
   custoMensal: number
+}
+
+function limparDescricao(desc: string) {
+  return desc
+    .split('\n')
+    .map(l => l.replace(/^-\s*/, '').trim())
+    .filter(Boolean)
 }
 
 export default function DashboardPage() {
@@ -34,16 +51,12 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       const supabase = getSupabase()
-
       const [configRes, produtosRes, cardapioRes] = await Promise.all([
         supabase.from('configuracoes').select('*').single(),
         supabase.from('produtos').select('*').eq('ativo', true).order('nome'),
         supabase.from('cardapio').select('*').eq('semana', 1).order('dia_semana').order('refeicao'),
       ])
-
       const produtos: Produto[] = produtosRes.data ?? []
-      const hoje = new Date()
-
       setData({
         numIdosos: configRes.data?.num_idosos ?? 42,
         produtosBaixos: produtos.filter(p => getStatusEstoque(p) !== 'ok'),
@@ -52,7 +65,6 @@ export default function DashboardPage() {
           return dias !== null && dias >= 0 && dias <= 7
         }),
         cardapioSemana: cardapioRes.data ?? [],
-        totalComprasPendentes: 3,
         custoMensal: 18420,
       })
       setLoading(false)
@@ -65,211 +77,134 @@ export default function DashboardPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px' }}>
         <div style={{ textAlign: 'center', color: '#888780' }}>
           <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
-          <div>Carregando dashboard...</div>
+          <div>Carregando...</div>
         </div>
       </div>
     )
   }
 
   if (!data) return null
-
   const { numIdosos, produtosBaixos, produtosVencendo } = data
 
   return (
-    <div>
-      {/* Métricas */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: '12px',
-          marginBottom: '20px',
-        }}
-      >
-        <MetricCard
-          label="Idosos ativos"
-          value={numIdosos}
-          sub="residentes"
-          icon={<Users size={13} />}
-        />
-        <MetricCard
-          label="Estoque baixo"
-          value={produtosBaixos.length}
-          sub="itens abaixo do mínimo"
-          icon={<AlertTriangle size={13} />}
-          color={produtosBaixos.length > 0 ? '#BA7517' : undefined}
-          onClick={() => router.push('/estoque')}
-        />
-        <MetricCard
-          label="Próx. vencer"
-          value={produtosVencendo.length}
-          sub="vencendo em 7 dias"
-          icon={<Clock size={13} />}
-          color={produtosVencendo.length > 0 ? '#A32D2D' : undefined}
-          onClick={() => router.push('/estoque')}
-        />
-        <MetricCard
-          label="Custo mensal"
-          value={formatBRL(data.custoMensal)}
-          sub="alimentação"
-          icon={<TrendingUp size={13} />}
-        />
+    <div style={{ maxWidth: '1100px' }}>
+
+      {/* ── MÉTRICAS ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+        <MetricCard label="Idosos ativos" value={numIdosos} sub="residentes" icon={<Users size={13} />} />
+        <MetricCard label="Estoque baixo" value={produtosBaixos.length} sub="itens abaixo do mínimo" icon={<AlertTriangle size={13} />} color={produtosBaixos.length > 0 ? '#BA7517' : undefined} onClick={() => router.push('/estoque')} />
+        <MetricCard label="Próx. vencer" value={produtosVencendo.length} sub="vencendo em 7 dias" icon={<Clock size={13} />} color={produtosVencendo.length > 0 ? '#A32D2D' : undefined} onClick={() => router.push('/estoque')} />
+        <MetricCard label="Custo mensal" value={formatBRL(data.custoMensal)} sub="alimentação" icon={<TrendingUp size={13} />} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      {/* ── LINHA 2: ALERTAS + PRODUÇÃO ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+
         {/* Alertas */}
-        <div>
-          <SectionHeader title="Alertas" subtitle="Atenção necessária agora" />
-
-          {produtosBaixos.length === 0 && produtosVencendo.length === 0 ? (
-            <Alert variant="green">
-              ✅ Tudo em ordem! Nenhum alerta no momento.
-            </Alert>
+        <div className="card">
+          <SectionHeader title="Alertas de estoque" subtitle="Itens abaixo do mínimo" />
+          {produtosBaixos.length === 0 ? (
+            <Alert variant="green">✅ Estoque em ordem!</Alert>
           ) : (
-            <>
-              {produtosBaixos.slice(0, 4).map((p) => (
-                <Alert key={p.id} variant="amber">
-                  <strong>{p.nome}</strong> — estoque baixo ({p.quantidade_atual} {p.unidade} / mínimo {p.estoque_minimo} {p.unidade})
-                </Alert>
-              ))}
-              {produtosVencendo.slice(0, 3).map((p) => (
-                <Alert key={p.id} variant="red">
-                  <strong>{p.nome}</strong> — vence em {getDiasParaVencer(p.data_validade)} dias ({p.data_validade ? formatDate(p.data_validade) : '—'})
-                </Alert>
-              ))}
-            </>
-          )}
-
-          {/* Produção do dia */}
-          <div style={{ marginTop: '16px' }}>
-            <SectionHeader
-              title="Produção de hoje"
-              subtitle="Semana 1 · Checklist da cozinha"
-              action={
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={() => router.push('/producao')}
-                >
-                  <ChefHat size={13} />
-                  Abrir
-                </button>
-              }
-            />
-            <div className="card-sm">
-              {REFEICAO_ORDER.slice(0, 4).map((r, i) => (
-                <div
-                  key={r}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 0',
-                    borderBottom: i < 3 ? '1px solid #E5E3DC' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: '13px' }}>{REFEICAO_LABELS[r]}</span>
-                  <Badge variant={i < 1 ? 'green' : 'gray'}>
-                    {i < 1 ? 'Confirmado' : 'Pendente'}
-                  </Badge>
-                </div>
-              ))}
-              <div style={{ marginTop: '12px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '12px',
-                    color: '#888780',
-                    marginBottom: '6px',
-                  }}
-                >
-                  <span>Progresso</span>
-                  <span>1 / 6 refeições</span>
-                </div>
-                <ProgressBar value={1} max={6} />
+            produtosBaixos.slice(0, 5).map((p) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E3DC', fontSize: '13px' }}>
+                <span style={{ fontWeight: 500, color: '#2C2C2A' }}>{p.nome}</span>
+                <span style={{ color: '#BA7517', whiteSpace: 'nowrap', marginLeft: '12px' }}>
+                  {p.quantidade_atual} / {p.estoque_minimo} {p.unidade}
+                </span>
               </div>
+            ))
+          )}
+          {produtosBaixos.length > 5 && (
+            <div style={{ fontSize: '12px', color: '#888780', marginTop: '8px', cursor: 'pointer' }} onClick={() => router.push('/estoque')}>
+              +{produtosBaixos.length - 5} itens → ver estoque
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Cardápio da semana */}
-        <div>
+        {/* Produção do dia */}
+        <div className="card">
           <SectionHeader
-            title="Cardápio — Semana 1"
-            subtitle="Visão rápida dos 7 dias"
+            title="Produção de hoje"
+            subtitle="Checklist da cozinha"
             action={
-              <button className="btn btn-sm" onClick={() => router.push('/cardapio')}>
-                Ver completo
+              <button className="btn btn-sm btn-primary" onClick={() => router.push('/producao')}>
+                <ChefHat size={13} /> Abrir
               </button>
             }
           />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {DIAS_SEMANA_SHORT.map((dia, idx) => {
-              const almoco = data.cardapioSemana.find(
-                (c) => c.dia_semana === idx && c.refeicao === 'almoco'
-              )
-              const jantar = data.cardapioSemana.find(
-                (c) => c.dia_semana === idx && c.refeicao === 'jantar'
-              )
-              return (
-                <div
-                  key={dia}
-                  className="card-sm"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '10px',
-                    padding: '10px 12px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      background: idx === 0 ? '#E1F5EE' : '#F1EFE8',
-                      color: idx === 0 ? '#0F6E56' : '#5F5E5A',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {dia}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', color: '#888780' }}>Almoço</div>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {almoco?.descricao?.split(',')[0] ?? '—'}
-                    </div>
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', color: '#888780' }}>Jantar</div>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        maxWidth: '120px',
-                      }}
-                    >
-                      {jantar?.descricao?.split(',')[0] ?? '—'}
-                    </div>
-                  </div>
+          {REFEICAO_ORDER.map((r, i) => (
+            <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: i < 5 ? '1px solid #E5E3DC' : 'none' }}>
+              <span style={{ fontSize: '13px', color: '#2C2C2A' }}>{REFEICAO_LABELS[r]}</span>
+              <Badge variant={i < 1 ? 'green' : 'gray'}>{i < 1 ? 'Confirmado' : 'Pendente'}</Badge>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── CARDÁPIO DA SEMANA ── */}
+      <div className="card">
+        <SectionHeader
+          title="Cardápio — Semana 1"
+          subtitle="Almoço e jantar dos 7 dias"
+          action={<button className="btn btn-sm" onClick={() => router.push('/cardapio')}>Ver cardápio completo</button>}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px' }}>
+          {DIAS.map((dia, idx) => {
+            const almoco = data.cardapioSemana.find(c => c.dia_semana === idx && c.refeicao === 'almoco')
+            const jantar = data.cardapioSemana.find(c => c.dia_semana === idx && c.refeicao === 'jantar')
+            const almocoLinhas = almoco ? limparDescricao(almoco.descricao) : []
+            const jantarLinhas = jantar ? limparDescricao(jantar.descricao) : []
+
+            return (
+              <div key={dia.short} style={{ background: '#FAFAF8', borderRadius: '10px', padding: '10px', border: '1px solid #E5E3DC' }}>
+                {/* Dia */}
+                <div style={{
+                  textAlign: 'center',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: idx === new Date().getDay() - 1 ? '#0F6E56' : '#888780',
+                  background: idx === new Date().getDay() - 1 ? '#E1F5EE' : 'transparent',
+                  borderRadius: '6px',
+                  padding: '3px 0',
+                  marginBottom: '8px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  {dia.short}
                 </div>
-              )
-            })}
-          </div>
+
+                {/* Almoço */}
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontSize: '9px', color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px', fontWeight: 600 }}>Almoço</div>
+                  {almocoLinhas.slice(0, 3).map((linha, i) => (
+                    <div key={i} style={{ fontSize: '11px', color: '#2C2C2A', lineHeight: 1.4, marginBottom: '1px' }}>
+                      {linha}
+                    </div>
+                  ))}
+                  {almocoLinhas.length > 3 && (
+                    <div style={{ fontSize: '10px', color: '#888780' }}>+{almocoLinhas.length - 3} itens</div>
+                  )}
+                </div>
+
+                {/* Divisor */}
+                <div style={{ height: '1px', background: '#E5E3DC', marginBottom: '8px' }} />
+
+                {/* Jantar */}
+                <div>
+                  <div style={{ fontSize: '9px', color: '#888780', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px', fontWeight: 600 }}>Jantar</div>
+                  {jantarLinhas.slice(0, 2).map((linha, i) => (
+                    <div key={i} style={{ fontSize: '11px', color: '#5F5E5A', lineHeight: 1.4, marginBottom: '1px' }}>
+                      {linha}
+                    </div>
+                  ))}
+                  {jantarLinhas.length > 2 && (
+                    <div style={{ fontSize: '10px', color: '#888780' }}>+{jantarLinhas.length - 2} itens</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
