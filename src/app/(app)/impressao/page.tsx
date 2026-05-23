@@ -131,7 +131,7 @@ export default function ImpressaoPage() {
 
       {/* Fichas */}
       {fichas.map((ficha, idx) => (
-        <div key={idx} style={{ pageBreakAfter: 'always', marginBottom: '32px' }}>
+        <div key={idx} style={{ pageBreakAfter: idx < fichas.length - 1 ? 'always' : 'avoid', marginBottom: '32px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             {/* Cabeçalho */}
             <thead>
