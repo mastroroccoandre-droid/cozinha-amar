@@ -1,13 +1,31 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Edit2, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, ChevronRight } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import { Modal, SectionHeader, Badge, EmptyState } from '@/components/ui'
-import { REFEICAO_LABELS, calcularQuantidadeTotal } from '@/lib/utils'
+import { REFEICAO_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/lib/store'
 import toast from 'react-hot-toast'
 import type { Preparacao, PreparacaoIngrediente, RefeicaoTipo } from '@/types'
+
+const DIAS_SEMANA: Record<number, string> = {
+  0: 'Segunda', 1: 'Terça', 2: 'Quarta', 3: 'Quinta',
+  4: 'Sexta', 5: 'Sábado', 6: 'Domingo',
+}
+
+function formatarNomePreparacao(nome: string): string {
+  // "Almoço Sem1/Dia0" → "Almoço — Segunda, Sem 1"
+  const match = nome.match(/^(.+?)\s+Sem(\d+)\/Dia(\d+)$/)
+  if (match) {
+    const tipo = match[1]
+    const sem = match[2]
+    const dia = parseInt(match[3])
+    const diaNome = DIAS_SEMANA[dia] ?? `Dia ${dia}`
+    return `${tipo} — ${diaNome}, Sem ${sem}`
+  }
+  return nome
+}
 
 interface PrepForm {
   nome: string
@@ -37,7 +55,8 @@ export default function PreparacoesPage() {
   const [modalNova, setModalNova] = useState(false)
   const [form, setForm] = useState<PrepForm>(FORM_INICIAL)
   const [salvando, setSalvando] = useState(false)
-  const [filtroCategoria, setFiltroCategoria] = useState('todas')
+  const [filtroRefeicao, setFiltroRefeicao] = useState('todas')
+  const [busca, setBusca] = useState('')
 
   async function carregar() {
     const supabase = getSupabase()
@@ -52,11 +71,11 @@ export default function PreparacoesPage() {
 
   useEffect(() => { carregar() }, [])
 
-  const categorias = ['todas', ...Array.from(new Set(preparacoes.map((p) => p.categoria)))]
-
-  const filtradas = filtroCategoria === 'todas'
-    ? preparacoes
-    : preparacoes.filter((p) => p.categoria === filtroCategoria)
+  const filtradas = preparacoes.filter((p) => {
+    const matchRefeicao = filtroRefeicao === 'todas' || p.tipo_refeicao === filtroRefeicao
+    const matchBusca = busca === '' || formatarNomePreparacao(p.nome).toLowerCase().includes(busca.toLowerCase())
+    return matchRefeicao && matchBusca
+  })
 
   function addIngrediente() {
     setForm((f) => ({
@@ -103,7 +122,6 @@ export default function PreparacoesPage() {
       return
     }
 
-    // Salva ingredientes
     const ings = form.ingredientes.filter((i) => i.nome_ingrediente.trim())
     if (ings.length > 0) {
       await supabase.from('preparacao_ingredientes').insert(
@@ -123,6 +141,16 @@ export default function PreparacoesPage() {
     carregar()
   }
 
+  const REFEICAO_FILTROS = [
+    { value: 'todas', label: 'Todas' },
+    { value: 'cafe_manha', label: 'Café da manhã' },
+    { value: 'colacao', label: 'Colação' },
+    { value: 'almoco', label: 'Almoço' },
+    { value: 'lanche_tarde', label: 'Lanche' },
+    { value: 'jantar', label: 'Jantar' },
+    { value: 'ceia', label: 'Ceia' },
+  ]
+
   return (
     <div>
       <SectionHeader
@@ -136,110 +164,71 @@ export default function PreparacoesPage() {
         }
       />
 
-      {/* Filtro por categoria */}
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
-        {categorias.map((cat) => (
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        {REFEICAO_FILTROS.map((f) => (
           <button
-            key={cat}
-            onClick={() => setFiltroCategoria(cat)}
+            key={f.value}
+            onClick={() => setFiltroRefeicao(f.value)}
             style={{
               padding: '5px 12px',
               borderRadius: '20px',
               fontSize: '12px',
               fontWeight: 500,
               cursor: 'pointer',
-              border: filtroCategoria === cat ? 'none' : '1px solid #E5E3DC',
-              background: filtroCategoria === cat ? '#1D9E75' : '#fff',
-              color: filtroCategoria === cat ? '#fff' : '#5F5E5A',
+              border: filtroRefeicao === f.value ? 'none' : '1px solid #E5E3DC',
+              background: filtroRefeicao === f.value ? '#7B9E6B' : '#fff',
+              color: filtroRefeicao === f.value ? '#fff' : '#5F5E5A',
               transition: 'all 0.15s',
-              textTransform: 'capitalize',
             }}
           >
-            {cat === 'todas' ? 'Todas' : cat}
+            {f.label}
           </button>
         ))}
       </div>
+
+      {/* Busca */}
+      <input
+        className="input"
+        placeholder="Buscar preparação..."
+        value={busca}
+        onChange={(e) => setBusca(e.target.value)}
+        style={{ marginBottom: '16px', maxWidth: '360px' }}
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#888780' }}>Carregando...</div>
       ) : filtradas.length === 0 ? (
         <EmptyState
           icon="📖"
-          title="Nenhuma preparação cadastrada"
-          description="Adicione receitas para calcular automaticamente as compras"
-          action={
-            <button className="btn btn-primary" onClick={() => setModalNova(true)}>
-              <Plus size={14} /> Primeira preparação
-            </button>
-          }
+          title="Nenhuma preparação encontrada"
+          description="Tente outro filtro ou adicione uma nova preparação"
         />
       ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: '12px',
-          }}
-        >
-          {filtradas.map((prep) => {
-            const totalGPorIdoso = prep.ingredientes
-              ?.filter((i) => i.unidade === 'g')
-              .reduce((a, i) => a + i.quantidade_por_idoso, 0) ?? 0
-
-            const totalKgTotal = (totalGPorIdoso * numIdosos) / 1000
-
-            return (
-              <div
-                key={prep.id}
-                className="card"
-                style={{ cursor: 'pointer', transition: 'all 0.15s' }}
-                onClick={() => setDetalhe(prep)}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: '10px',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '15px', fontWeight: 500, marginBottom: '4px' }}>
-                      {prep.nome}
-                    </div>
-                    <Badge variant="gray">{prep.categoria}</Badge>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' }}>
+          {filtradas.map((prep) => (
+            <div
+              key={prep.id}
+              className="card"
+              style={{ cursor: 'pointer' }}
+              onClick={() => setDetalhe(prep)}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px', color: '#2C2C2A' }}>
+                    {formatarNomePreparacao(prep.nome)}
                   </div>
-                  <ChevronRight size={16} style={{ color: '#888780', flexShrink: 0 }} />
+                  <Badge variant="gray">{REFEICAO_LABELS[prep.tipo_refeicao]}</Badge>
                 </div>
+                <ChevronRight size={16} style={{ color: '#888780', flexShrink: 0 }} />
+              </div>
 
-                <div
-                  style={{
-                    fontSize: '11px',
-                    color: '#888780',
-                    marginBottom: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.3px',
-                  }}
-                >
-                  {REFEICAO_LABELS[prep.tipo_refeicao]}
-                </div>
-
-                {/* Ingredientes resumo */}
+              {/* Ingredientes resumo */}
+              <div style={{ marginTop: '8px' }}>
                 {prep.ingredientes?.slice(0, 3).map((ing) => (
-                  <div
-                    key={ing.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '12px',
-                      color: '#5F5E5A',
-                      padding: '2px 0',
-                    }}
-                  >
+                  <div key={ing.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#5F5E5A', padding: '2px 0' }}>
                     <span>{ing.nome_ingrediente}</span>
-                    <span style={{ fontWeight: 500 }}>
-                      {ing.quantidade_por_idoso} {ing.unidade}/idoso
-                    </span>
+                    <span style={{ fontWeight: 500 }}>{ing.quantidade_por_idoso} {ing.unidade}</span>
                   </div>
                 ))}
                 {(prep.ingredientes?.length ?? 0) > 3 && (
@@ -247,46 +236,9 @@ export default function PreparacoesPage() {
                     +{(prep.ingredientes?.length ?? 0) - 3} ingredientes
                   </div>
                 )}
-
-                {/* Totais */}
-                {totalGPorIdoso > 0 && (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '8px',
-                      marginTop: '12px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        textAlign: 'center',
-                        background: '#F1EFE8',
-                        borderRadius: '6px',
-                        padding: '6px',
-                      }}
-                    >
-                      <div style={{ fontSize: '16px', fontWeight: 500 }}>{totalGPorIdoso}g</div>
-                      <div style={{ fontSize: '10px', color: '#888780' }}>por idoso</div>
-                    </div>
-                    <div
-                      style={{
-                        textAlign: 'center',
-                        background: '#E1F5EE',
-                        borderRadius: '6px',
-                        padding: '6px',
-                      }}
-                    >
-                      <div style={{ fontSize: '16px', fontWeight: 500, color: '#0F6E56' }}>
-                        {totalKgTotal.toFixed(1)}kg
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#0F6E56' }}>total ({numIdosos} id.)</div>
-                    </div>
-                  </div>
-                )}
               </div>
-            )
-          })}
+            </div>
+          ))}
         </div>
       )}
 
@@ -295,13 +247,9 @@ export default function PreparacoesPage() {
         <Modal
           open={!!detalhe}
           onClose={() => setDetalhe(null)}
-          title={detalhe.nome}
+          title={formatarNomePreparacao(detalhe.nome)}
           size="md"
-          footer={
-            <button className="btn btn-sm" onClick={() => setDetalhe(null)}>
-              Fechar
-            </button>
-          }
+          footer={<button className="btn btn-sm" onClick={() => setDetalhe(null)}>Fechar</button>}
         >
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
             <Badge variant="gray">{detalhe.categoria}</Badge>
@@ -310,48 +258,13 @@ export default function PreparacoesPage() {
 
           {(detalhe as any).ingredientes?.length > 0 && (
             <>
-              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '8px' }}>
-                Ingredientes por idoso:
-              </div>
+              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '8px' }}>Ingredientes:</div>
               {(detalhe as any).ingredientes.map((ing: PreparacaoIngrediente) => (
-                <div
-                  key={ing.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '7px 0',
-                    borderBottom: '1px solid #E5E3DC',
-                    fontSize: '13px',
-                  }}
-                >
+                <div key={ing.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #E5E3DC', fontSize: '13px' }}>
                   <span>{ing.nome_ingrediente}</span>
-                  <span style={{ fontWeight: 500 }}>
-                    {ing.quantidade_por_idoso} {ing.unidade}
-                  </span>
+                  <span style={{ fontWeight: 500 }}>{ing.quantidade_por_idoso} {ing.unidade}</span>
                 </div>
               ))}
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '10px',
-                  marginTop: '16px',
-                }}
-              >
-                <div style={{ textAlign: 'center', background: '#F1EFE8', borderRadius: '10px', padding: '14px' }}>
-                  <div style={{ fontSize: '22px', fontWeight: 500 }}>
-                    {(detalhe as any).ingredientes.filter((i: any) => i.unidade === 'g').reduce((a: number, i: any) => a + i.quantidade_por_idoso, 0)}g
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#888780' }}>por idoso</div>
-                </div>
-                <div style={{ textAlign: 'center', background: '#E1F5EE', borderRadius: '10px', padding: '14px' }}>
-                  <div style={{ fontSize: '22px', fontWeight: 500, color: '#0F6E56' }}>
-                    {((detalhe as any).ingredientes.filter((i: any) => i.unidade === 'g').reduce((a: number, i: any) => a + i.quantidade_por_idoso, 0) * numIdosos / 1000).toFixed(1)} kg
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#0F6E56' }}>total ({numIdosos} idosos)</div>
-                </div>
-              </div>
             </>
           )}
 
@@ -371,14 +284,8 @@ export default function PreparacoesPage() {
         size="lg"
         footer={
           <>
-            <button className="btn btn-sm" onClick={() => { setModalNova(false); setForm(FORM_INICIAL) }}>
-              Cancelar
-            </button>
-            <button
-              className="btn btn-sm btn-primary"
-              onClick={salvarPreparacao}
-              disabled={salvando}
-            >
+            <button className="btn btn-sm" onClick={() => { setModalNova(false); setForm(FORM_INICIAL) }}>Cancelar</button>
+            <button className="btn btn-sm btn-primary" onClick={salvarPreparacao} disabled={salvando}>
               {salvando ? 'Salvando...' : '✓ Salvar preparação'}
             </button>
           </>
@@ -387,120 +294,48 @@ export default function PreparacoesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div className="input-group" style={{ gridColumn: '1 / -1' }}>
             <label className="input-label">Nome da preparação *</label>
-            <input
-              className="input"
-              value={form.nome}
-              onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
-              placeholder="Ex: Frango grelhado com alho"
-            />
+            <input className="input" value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Ex: Frango grelhado com alho" />
           </div>
-
           <div className="input-group">
             <label className="input-label">Categoria</label>
-            <select
-              className="input"
-              value={form.categoria}
-              onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
-            >
+            <select className="input" value={form.categoria} onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}>
               {['Proteínas', 'Cereais', 'Leguminosas', 'Hortifruti', 'Sopas', 'Massas', 'Bebidas', 'Sobremesas', 'Laticínios', 'Padaria'].map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
           </div>
-
           <div className="input-group">
             <label className="input-label">Tipo de refeição</label>
-            <select
-              className="input"
-              value={form.tipo_refeicao}
-              onChange={(e) => setForm((f) => ({ ...f, tipo_refeicao: e.target.value as RefeicaoTipo }))}
-            >
-              {Object.entries(REFEICAO_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
+            <select className="input" value={form.tipo_refeicao} onChange={(e) => setForm((f) => ({ ...f, tipo_refeicao: e.target.value as RefeicaoTipo }))}>
+              {Object.entries(REFEICAO_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
         </div>
 
-        {/* Ingredientes */}
         <div style={{ marginTop: '16px', marginBottom: '8px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '10px' }}>
-            Ingredientes <span style={{ fontSize: '12px', color: '#888780', fontWeight: 400 }}>(quantidade por idoso)</span>
-          </div>
-
+          <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '10px' }}>Ingredientes</div>
           {form.ingredientes.map((ing, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 80px 70px 32px',
-                gap: '6px',
-                marginBottom: '6px',
-                alignItems: 'center',
-              }}
-            >
-              <input
-                className="input"
-                value={ing.nome_ingrediente}
-                onChange={(e) => updateIngrediente(idx, 'nome_ingrediente', e.target.value)}
-                placeholder="Ingrediente"
-              />
-              <input
-                className="input"
-                type="number"
-                value={ing.quantidade_por_idoso}
-                onChange={(e) => updateIngrediente(idx, 'quantidade_por_idoso', e.target.value)}
-                placeholder="Qtd"
-                min={0}
-              />
-              <select
-                className="input"
-                value={ing.unidade}
-                onChange={(e) => updateIngrediente(idx, 'unidade', e.target.value)}
-              >
-                <option>g</option>
-                <option>ml</option>
-                <option>un</option>
-                <option>L</option>
-                <option>kg</option>
-                <option>colher</option>
+            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px 32px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+              <input className="input" value={ing.nome_ingrediente} onChange={(e) => updateIngrediente(idx, 'nome_ingrediente', e.target.value)} placeholder="Ingrediente" />
+              <input className="input" type="number" value={ing.quantidade_por_idoso} onChange={(e) => updateIngrediente(idx, 'quantidade_por_idoso', e.target.value)} placeholder="Qtd" min={0} />
+              <select className="input" value={ing.unidade} onChange={(e) => updateIngrediente(idx, 'unidade', e.target.value)}>
+                <option>g</option><option>ml</option><option>un</option><option>L</option><option>kg</option><option>colher</option>
               </select>
-              <button
-                className="btn btn-icon btn-sm"
-                onClick={() => removeIngrediente(idx)}
-                style={{ color: '#A32D2D' }}
-                disabled={form.ingredientes.length === 1}
-              >
+              <button className="btn btn-icon btn-sm" onClick={() => removeIngrediente(idx)} style={{ color: '#A32D2D' }} disabled={form.ingredientes.length === 1}>
                 <Trash2 size={13} />
               </button>
             </div>
           ))}
-
-          <button className="btn btn-sm" onClick={addIngrediente}>
-            <Plus size={13} /> Ingrediente
-          </button>
+          <button className="btn btn-sm" onClick={addIngrediente}><Plus size={13} /> Ingrediente</button>
         </div>
 
         <div className="input-group" style={{ marginTop: '12px' }}>
           <label className="input-label">Observações</label>
-          <textarea
-            className="input"
-            rows={2}
-            value={form.observacoes}
-            onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))}
-            placeholder="Alergênicos, modo de preparo especial..."
-          />
+          <textarea className="input" rows={2} value={form.observacoes} onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))} placeholder="Alergênicos, modo de preparo especial..." />
         </div>
-
         <div className="input-group">
           <label className="input-label">Possíveis substituições</label>
-          <textarea
-            className="input"
-            rows={2}
-            value={form.substituicoes}
-            onChange={(e) => setForm((f) => ({ ...f, substituicoes: e.target.value }))}
-            placeholder="Ex: Pode substituir frango por peixe..."
-          />
+          <textarea className="input" rows={2} value={form.substituicoes} onChange={(e) => setForm((f) => ({ ...f, substituicoes: e.target.value }))} placeholder="Ex: Pode substituir frango por peixe..." />
         </div>
       </Modal>
     </div>
