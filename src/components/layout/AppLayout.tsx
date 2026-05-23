@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   LayoutDashboard, ChefHat, CalendarDays, BookOpen,
   Package, ShoppingCart, BarChart3, Settings, Menu, LogOut, Users
@@ -13,7 +13,7 @@ import { useAppStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
-const NAV = [
+const NAV_ADMIN = [
   { section: 'Principal', items: [
     { href: '/dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
     { href: '/producao',      label: 'Produção do Dia',  icon: ChefHat },
@@ -32,11 +32,43 @@ const NAV = [
   ]},
 ]
 
+const NAV_COZINHA = [
+  { section: 'Principal', items: [
+    { href: '/producao',      label: 'Produção do Dia',  icon: ChefHat },
+  ]},
+  { section: 'Cardápio', items: [
+    { href: '/cardapio',      label: 'Cardápio Semanal', icon: CalendarDays },
+    { href: '/preparacoes',   label: 'Preparações',      icon: BookOpen },
+  ]},
+  { section: 'Estoque', items: [
+    { href: '/estoque',       label: 'Estoque',          icon: Package },
+    { href: '/compras',       label: 'Lista de Compras', icon: ShoppingCart },
+  ]},
+]
+
+// Emails com perfil cozinha (menu restrito)
+const EMAILS_COZINHA = [
+  'rosildacardoso1203@gmail.com',
+]
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { sidebarOpen, setSidebarOpen, usuario, config } = useAppStore()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [emailUsuario, setEmailUsuario] = useState<string>('')
+
+  useEffect(() => {
+    async function getEmail() {
+      const supabase = getSupabase()
+      const { data } = await supabase.auth.getUser()
+      setEmailUsuario(data.user?.email ?? '')
+    }
+    getEmail()
+  }, [])
+
+  const isCozinha = EMAILS_COZINHA.includes(emailUsuario)
+  const NAV = isCozinha ? NAV_COZINHA : NAV_ADMIN
 
   async function handleLogout() {
     const supabase = getSupabase()
@@ -97,7 +129,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ color: '#fff', fontSize: '12px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{usuario?.nome ?? 'Usuário'}</div>
-            <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px', textTransform: 'capitalize' }}>{usuario?.perfil ?? 'cozinha'}</div>
+            <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px', textTransform: 'capitalize' }}>{isCozinha ? 'Cozinha' : (usuario?.perfil ?? 'Admin')}</div>
           </div>
           <button onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.35)', padding: '4px', borderRadius: '6px', display: 'flex' }} title="Sair">
             <LogOut size={15} />
