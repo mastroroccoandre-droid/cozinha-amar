@@ -51,7 +51,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
-            <Image src="/logo.png" alt="Logo Residencial Amar" width={40} height={40} style={{ objectFit: 'contain' }} />
+            <img src="/logo.png" alt="Logo" style={{ width: "40px", height: "40px", objectFit: "contain" }} />
           </div>
           <div>
             <div style={{ fontFamily: 'DM Serif Display, serif', color: '#fff', fontSize: '15px', lineHeight: 1.2 }}>
