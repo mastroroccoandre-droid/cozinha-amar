@@ -30,8 +30,19 @@ export default function ComprasPage() {
       supabase.from('listas_compra').select('*, itens:compra_itens(*)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.auth.getUser(),
     ])
-    setLista(data)
     setIsAdmin(EMAILS_ADMIN.includes(authData.user?.email ?? ''))
+    if (!data) {
+      // Cria lista vazia automaticamente
+      const { data: novaLista } = await supabase.from('listas_compra').insert({
+        titulo: 'Lista de compras — ' + new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
+        tipo: 'mensal',
+        semana_referencia: 1,
+        total_estimado: 0,
+      }).select('*, itens:compra_itens(*)').single()
+      setLista(novaLista)
+    } else {
+      setLista(data)
+    }
     setLoading(false)
   }
 
