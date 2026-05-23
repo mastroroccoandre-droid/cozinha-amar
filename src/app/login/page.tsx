@@ -39,17 +39,18 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <div style={{
-            width: '72px', height: '72px',
-            background: '#fff',
-            borderRadius: '20px',
+            width: '100px', height: '100px',
+            background: 'transparent',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 16px',
-            fontSize: '32px',
-            boxShadow: '0 4px 20px rgba(123,158,107,0.15)',
           }}>
-            🏠
+            <img
+              src="/logo.png"
+              alt="Residencial Amar"
+              style={{ width: '100px', height: '100px', objectFit: 'contain' }}
+            />
           </div>
           <h1 style={{
             fontFamily: 'DM Serif Display, serif',
