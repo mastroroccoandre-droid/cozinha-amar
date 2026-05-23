@@ -245,7 +245,7 @@ export default function ComprasPage() {
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '16px' }}>
-            <MetricCard label="Total estimado" value={formatBRL(totalEstimado)} />
+            {isAdmin && <MetricCard label="Total estimado" value={formatBRL(totalEstimado)} />}
             <MetricCard label="Itens pendentes" value={pendentes} color={pendentes > 0 ? '#BA7517' : undefined} />
             <MetricCard label="Recebidos" value={recebidos} color="#1D9E75" />
             <MetricCard label="Status" value={lista.status === 'aprovado' ? 'Aprovada' : 'Pendente'} color={lista.status === 'aprovado' ? '#1D9E75' : '#BA7517'} />
