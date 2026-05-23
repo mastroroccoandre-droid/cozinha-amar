@@ -71,12 +71,7 @@ export default function PreparacoesPage() {
   const [modalNova, setModalNova] = useState(false)
   const [form, setForm] = useState<PrepForm>(FORM_INICIAL)
   const [salvando, setSalvando] = useState(false)
-  function getSemanaDoMes(data: Date): number {
-    const primeiroDia = new Date(data.getFullYear(), data.getMonth(), 1)
-    const diaDaSemana = primeiroDia.getDay()
-    return Math.min(5, Math.ceil((data.getDate() + diaDaSemana) / 7))
-  }
-  const semanaAtual = getSemanaDoMes(new Date())
+  const semanaAtual = (() => { const h = new Date(); const p = new Date(h.getFullYear(), h.getMonth(), 1); return Math.min(5, Math.ceil((h.getDate() + p.getDay()) / 7)); })()
   const [semana, setSemana] = useState(semanaAtual)
   const [filtroRefeicao, setFiltroRefeicao] = useState<RefeicaoTipo | 'todas'>('todas')
 
