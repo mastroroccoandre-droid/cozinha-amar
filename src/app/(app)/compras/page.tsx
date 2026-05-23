@@ -23,6 +23,21 @@ export default function ComprasPage() {
   const [novoItem, setNovoItem] = useState({ nome: '', quantidade: '', unidade: 'kg', categoria: 'secos' as CategoriaAlimento, observacao: '' })
   const [precoItem, setPrecoItem] = useState({ preco: '', fornecedor: '' })
   const [salvando, setSalvando] = useState(false)
+  const [ingredientes, setIngredientes] = useState<{nome: string, unidade: string}[]>([])
+
+  async function carregarIngredientes() {
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('preparacao_ingredientes')
+      .select('nome_ingrediente, unidade')
+      .order('nome_ingrediente')
+    // Deduplica por nome
+    const mapa = new Map<string, string>()
+    ;(data ?? []).forEach((i: any) => {
+      if (!mapa.has(i.nome_ingrediente)) mapa.set(i.nome_ingrediente, i.unidade)
+    })
+    setIngredientes(Array.from(mapa.entries()).map(([nome, unidade]) => ({ nome, unidade })))
+  }
 
   async function carregar() {
     const supabase = getSupabase()
@@ -46,7 +61,7 @@ export default function ComprasPage() {
     setLoading(false)
   }
 
-  useEffect(() => { carregar() }, [])
+  useEffect(() => { carregar(); carregarIngredientes() }, [])
 
   async function gerarListaAutomatica() {
     setGerando(true)
@@ -282,8 +297,16 @@ export default function ComprasPage() {
         }
       >
         <div className="input-group">
-          <label className="input-label">Nome do item *</label>
-          <input className="input" value={novoItem.nome} onChange={(e) => setNovoItem(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Arroz parboilizado" />
+          <label className="input-label">Produto *</label>
+          <select className="input" value={novoItem.nome} onChange={(e) => {
+            const ing = ingredientes.find(i => i.nome === e.target.value)
+            setNovoItem(f => ({ ...f, nome: e.target.value, unidade: ing?.unidade ?? f.unidade }))
+          }}>
+            <option value="">Selecione um produto...</option>
+            {ingredientes.map((ing) => (
+              <option key={ing.nome} value={ing.nome}>{ing.nome}</option>
+            ))}
+          </select>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div className="input-group">
@@ -292,16 +315,8 @@ export default function ComprasPage() {
           </div>
           <div className="input-group">
             <label className="input-label">Unidade</label>
-            <select className="input" value={novoItem.unidade} onChange={(e) => setNovoItem(f => ({ ...f, unidade: e.target.value }))}>
-              <option>kg</option><option>g</option><option>L</option><option>ml</option><option>un</option><option>cx</option><option>pct</option><option>maço</option>
-            </select>
+            <input className="input" value={novoItem.unidade} readOnly style={{ background: '#F8F6F2', color: '#888780' }} />
           </div>
-        </div>
-        <div className="input-group">
-          <label className="input-label">Categoria</label>
-          <select className="input" value={novoItem.categoria} onChange={(e) => setNovoItem(f => ({ ...f, categoria: e.target.value as CategoriaAlimento }))}>
-            {Object.entries(CATEGORIA_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
         </div>
       </Modal>
 
