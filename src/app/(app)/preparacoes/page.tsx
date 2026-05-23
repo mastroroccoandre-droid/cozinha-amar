@@ -71,8 +71,14 @@ export default function PreparacoesPage() {
   const [modalNova, setModalNova] = useState(false)
   const [form, setForm] = useState<PrepForm>(FORM_INICIAL)
   const [salvando, setSalvando] = useState(false)
-  const [semana, setSemana] = useState(1)
-  const [filtroRefeicao, setFiltroRefeicao] = useState<RefeicaoTipo | 'todas'>('almoco')
+  function getSemanaDoMes(data: Date): number {
+    const primeiroDia = new Date(data.getFullYear(), data.getMonth(), 1)
+    const diaDaSemana = primeiroDia.getDay()
+    return Math.min(5, Math.ceil((data.getDate() + diaDaSemana) / 7))
+  }
+  const semanaAtual = getSemanaDoMes(new Date())
+  const [semana, setSemana] = useState(semanaAtual)
+  const [filtroRefeicao, setFiltroRefeicao] = useState<RefeicaoTipo | 'todas'>('todas')
 
   async function carregar() {
     const supabase = getSupabase()
@@ -242,15 +248,12 @@ export default function PreparacoesPage() {
 
                           {prep ? (
                             <>
-                              {prep.ingredientes?.slice(0, 3).map((ing, i) => (
+                              {prep.ingredientes?.map((ing, i) => (
                                 <div key={i} style={{ marginBottom: '1px', lineHeight: 1.3 }}>
                                   {ing.nome_ingrediente}
-                                  <span style={{ color: '#7B9E6B', marginLeft: '4px' }}>{ing.quantidade_por_idoso}{ing.unidade}</span>
+                                  <span style={{ color: '#7B9E6B', marginLeft: '4px' }}>{formatarQuantidade(ing.quantidade_por_idoso, ing.unidade)}</span>
                                 </div>
                               ))}
-                              {(prep.ingredientes?.length ?? 0) > 3 && (
-                                <div style={{ color: '#888780', marginTop: '2px' }}>+{(prep.ingredientes?.length ?? 0) - 3} itens</div>
-                              )}
                             </>
                           ) : (
                             <div style={{ textAlign: 'center', paddingTop: '16px' }}>—</div>
