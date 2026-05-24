@@ -59,6 +59,8 @@ function mapearDiasDoMes(ano: number, mes: number): { semana: number; dia_semana
   return dias
 }
 
+const EMAILS_COZINHA = ['rosildacardoso1203@gmail.com']
+
 export default function ComprasPage() {
   const [listas, setListas] = useState<Lista[]>([])
   const [listaSelecionada, setListaSelecionada] = useState<Lista | null>(null)
@@ -68,6 +70,15 @@ export default function ComprasPage() {
   const [modalAberto, setModalAberto] = useState(false)
   const [modalPreco, setModalPreco] = useState<CompraItem | null>(null)
   const [precoInput, setPrecoInput] = useState('')
+  const [emailUsuario, setEmailUsuario] = useState<string>('')
+
+  useEffect(() => {
+    getSupabase().auth.getUser().then(({ data }) => {
+      setEmailUsuario(data.user?.email ?? '')
+    })
+  }, [])
+
+  const isCozinha = EMAILS_COZINHA.includes(emailUsuario)
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
 
   // Modal gerar lista
@@ -481,8 +492,8 @@ export default function ComprasPage() {
                         <th className="text-left px-4 py-2 text-gray-600">Item</th>
                         <th className="text-right px-4 py-2 text-gray-600">Qtde</th>
                         <th className="text-left px-2 py-2 text-gray-600">Un.</th>
-                        <th className="text-right px-4 py-2 text-gray-600">Preço unit.</th>
-                        <th className="text-right px-4 py-2 text-gray-600">Total</th>
+                        {!isCozinha && <th className="text-right px-4 py-2 text-gray-600">Preço unit.</th>}
+                        {!isCozinha && <th className="text-right px-4 py-2 text-gray-600">Total</th>}
                         <th className="px-4 py-2"></th>
                       </tr>
                     </thead>
@@ -501,12 +512,16 @@ export default function ComprasPage() {
                               : item.quantidade_comprar.toFixed(2)}
                           </td>
                           <td className="px-2 py-2 text-gray-500">{item.unidade}</td>
-                          <td className="px-4 py-2 text-right text-gray-500">
-                            {item.preco_unitario ? `R$ ${item.preco_unitario.toFixed(2)}` : '—'}
-                          </td>
-                          <td className="px-4 py-2 text-right text-gray-700">
-                            {item.total_estimado ? `R$ ${item.total_estimado.toFixed(2)}` : '—'}
-                          </td>
+                          {!isCozinha && (
+                            <td className="px-4 py-2 text-right text-gray-500">
+                              {item.preco_unitario ? `R$ ${item.preco_unitario.toFixed(2)}` : '—'}
+                            </td>
+                          )}
+                          {!isCozinha && (
+                            <td className="px-4 py-2 text-right text-gray-700">
+                              {item.total_estimado ? `R$ ${item.total_estimado.toFixed(2)}` : '—'}
+                            </td>
+                          )}
                           <td className="px-4 py-2 text-center">
                             {item.status === 'comprado' ? (
                               <span className="text-green-600 text-xs font-medium">✓ Comprado</span>
