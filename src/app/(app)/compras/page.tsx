@@ -155,27 +155,17 @@ export default function ComprasPage() {
         .single()
       const numIdosos = config?.num_idosos || 0
 
-      // 4. Buscar preparações das semanas selecionadas
-      const { data: preparacoes } = await supabase
+      // 4. Buscar preparações filtrando pelo nome (padrão: "Refeição SemX/DiaY")
+      const { data: todasPreps } = await supabase
         .from('preparacoes')
         .select('id, nome, tipo_refeicao')
-        .in('semana', semanasSelecionadas) // assumindo campo semana — ajustar se necessário
 
-      // Fallback: buscar todas e filtrar pelo nome (padrão: "Sem1/Dia0 — Desjejum")
-      let prepsFiltradas: any[] = []
-      if (!preparacoes || preparacoes.length === 0) {
-        const { data: todasPreps } = await supabase
-          .from('preparacoes')
-          .select('id, nome, tipo_refeicao')
-        prepsFiltradas = (todasPreps || []).filter(p => {
-          const match = p.nome?.match(/Sem(\d+)\/Dia(\d+)/)
-          if (!match) return false
-          const semana = parseInt(match[1])
-          return semanasSelecionadas.includes(semana)
-        })
-      } else {
-        prepsFiltradas = preparacoes
-      }
+      const prepsFiltradas = (todasPreps || []).filter(p => {
+        const match = p.nome?.match(/Sem(\d+)\/Dia(\d+)/)
+        if (!match) return false
+        const semana = parseInt(match[1])
+        return semanasSelecionadas.includes(semana)
+      })
 
       // 5. Buscar ingredientes dessas preparações
       const prepIds = prepsFiltradas.map(p => p.id)
@@ -269,7 +259,7 @@ export default function ComprasPage() {
 
       const { data: novaLista, error: erroLista } = await supabase
         .from('listas_compra')
-        .insert({ titulo, tipo: 'mensal', status: 'pendente', total_estimado: null })
+        .insert({ titulo, tipo: 'mensal', status: 'aberta', total_estimado: null })
         .select()
         .single()
 
