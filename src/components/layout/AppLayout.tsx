@@ -153,7 +153,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <aside style={{ position: 'fixed', top: 0, left: 0, width: '240px', height: '100vh', zIndex: 201, transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.2s ease' }} className="md:hidden">
         <SidebarContent />
       </aside>
-      <div style={{ marginLeft: sidebarOpen ? '220px' : '0', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
+      <div style={{ marginLeft: typeof window !== 'undefined' && window.innerWidth < 768 ? '0' : sidebarOpen ? '220px' : '0', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
         <header style={{ background: '#fff', borderBottom: '1px solid #E5E3DC', padding: '0 20px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button className="btn btn-icon btn-sm" onClick={() => { setSidebarOpen(!sidebarOpen); setMobileOpen(!mobileOpen) }}>
