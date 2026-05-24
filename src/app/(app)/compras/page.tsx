@@ -1,15 +1,24 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Check, RefreshCw, Trash2 } from 'lucide-react'
+import { Plus, Check, RefreshCw, Trash2, X } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import { Modal, SectionHeader, Badge, Alert, MetricCard } from '@/components/ui'
 import { formatBRL, CATEGORIA_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/lib/store'
 import toast from 'react-hot-toast'
-import type { ListaCompra, CompraItem, Produto, CategoriaAlimento } from '@/types'
+import type { ListaCompra, CompraItem, CategoriaAlimento } from '@/types'
 
 const EMAILS_ADMIN = ['admin@residencialamar.com.br', 'mxmastrorocco@gmail.com']
+
+const CATEGORIAS = [
+  { value: 'hortifruti', label: 'Hortifruti' },
+  { value: 'carnes', label: 'Carnes' },
+  { value: 'secos', label: 'Secos' },
+  { value: 'laticinios', label: 'Laticínios' },
+  { value: 'bebidas', label: 'Bebidas' },
+  { value: 'outros', label: 'Outros' },
+]
 
 export default function ComprasPage() {
   const { config } = useAppStore()
@@ -18,29 +27,34 @@ export default function ComprasPage() {
   const [gerando, setGerando] = useState(false)
   const [aprovando, setAprovando] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [modalItem, setModalItem] = useState<{ open: boolean }>({ open: false })
+  const [modalItem, setModalItem] = useState(false)
   const [modalGerar, setModalGerar] = useState(false)
+  const [modalLimpar, setModalLimpar] = useState(false)
   const [modalPreco, setModalPreco] = useState<{ open: boolean; item?: CompraItem }>({ open: false })
   const [novoItem, setNovoItem] = useState({ nome: '', quantidade: '', unidade: 'kg', categoria: 'secos' as CategoriaAlimento })
   const [precoItem, setPrecoItem] = useState({ preco: '', fornecedor: '' })
   const [salvando, setSalvando] = useState(false)
   const [ingredientes, setIngredientes] = useState<{nome: string, unidade: string, categoria: string}[]>([])
-  const [filtroCategoria, setFiltroCategoria] = useState<string>('')
-  const [semanasPeriodo, setSemanasPeriodo] = useState<number>(4)
+  const [filtroCategoria, setFiltroCategoria] = useState('')
+  // Gerar
+  const [semanasPeriodo, setSemanasPeriodo] = useState(4)
+  const [categoriasFiltro, setCategoriasFiltro] = useState<string[]>([]) // vazio = todas
+  // Limpar
+  const [limparCategoria, setLimparCategoria] = useState('todas')
 
   async function carregarIngredientes() {
     const supabase = getSupabase()
     const { data } = await supabase.from('preparacao_ingredientes').select('nome_ingrediente, unidade, categoria').order('nome_ingrediente')
-    function maiorUnidade(u: string): string {
-      if (u === 'g') return 'kg'
-      if (u === 'ml') return 'L'
-      return u
-    }
     const mapa = new Map<string, {unidade: string, categoria: string}>()
     ;(data ?? []).forEach((i: any) => {
-      if (!mapa.has(i.nome_ingrediente)) mapa.set(i.nome_ingrediente, { unidade: maiorUnidade(i.unidade), categoria: i.categoria ?? 'outros' })
+      if (!mapa.has(i.nome_ingrediente)) {
+        let u = i.unidade
+        if (u === 'g') u = 'kg'
+        if (u === 'ml') u = 'L'
+        mapa.set(i.nome_ingrediente, { unidade: u, categoria: i.categoria ?? 'outros' })
+      }
     })
-    setIngredientes(Array.from(mapa.entries()).map(([nome, v]) => ({ nome, unidade: v.unidade, categoria: v.categoria })).sort((a, b) => a.nome.localeCompare(b.nome)))
+    setIngredientes(Array.from(mapa.entries()).map(([nome, v]) => ({ nome, ...v })).sort((a, b) => a.nome.localeCompare(b.nome)))
   }
 
   async function carregar() {
@@ -64,29 +78,29 @@ export default function ComprasPage() {
 
   useEffect(() => { carregar(); carregarIngredientes() }, [])
 
+  function toggleCategoria(cat: string) {
+    setCategoriasFiltro(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
+  }
+
   async function gerarListaCardapio() {
     setGerando(true)
     setModalGerar(false)
     const supabase = getSupabase()
 
-    // Busca todos os ingredientes das preparações
     const { data: ings } = await supabase
       .from('preparacao_ingredientes')
       .select('nome_ingrediente, quantidade_por_idoso, unidade, categoria, produto_id')
 
-    // Busca estoque atual
     const { data: produtos } = await supabase.from('produtos').select('*').eq('ativo', true)
 
-    // Agrupa ingredientes por nome e soma quantidades
-    // Cada semana aparece 1x, então multiplicamos pelo número de semanas
     const mapaIngredientes = new Map<string, { quantidade: number; unidade: string; categoria: string; produto_id: string | null }>()
 
     ;(ings ?? []).forEach((ing: any) => {
-      // Divide por 5 semanas (cardápio tem 5 semanas) e multiplica pelo período escolhido
+      // Filtra categorias se selecionadas
+      if (categoriasFiltro.length > 0 && !categoriasFiltro.includes(ing.categoria ?? 'outros')) return
+
       const qtdPorSemana = ing.quantidade_por_idoso / 5
       const qtdPeriodo = qtdPorSemana * semanasPeriodo
-
-      // Converte para maior unidade
       let qtd = qtdPeriodo
       let unidade = ing.unidade
       if (unidade === 'g') { qtd = qtd / 1000; unidade = 'kg' }
@@ -100,11 +114,9 @@ export default function ComprasPage() {
       }
     })
 
-    // Subtrai o que já tem em estoque
     const estoqueMap = new Map<string, number>()
     ;(produtos ?? []).forEach((p: any) => { estoqueMap.set(p.nome, p.quantidade_atual) })
 
-    // Filtra itens que precisam ser comprados
     const itensComprar = Array.from(mapaIngredientes.entries())
       .map(([nome, v]) => {
         const emEstoque = estoqueMap.get(nome) ?? 0
@@ -115,13 +127,17 @@ export default function ComprasPage() {
       .sort((a, b) => a.nome.localeCompare(b.nome))
 
     if (itensComprar.length === 0) {
-      toast.success('Estoque suficiente para o período selecionado!')
+      toast.success('Estoque suficiente para o período e categorias selecionadas!')
       setGerando(false)
       return
     }
 
-    // Cria nova lista
-    const titulo = `Lista — ${semanasPeriodo} ${semanasPeriodo === 1 ? 'semana' : 'semanas'} — ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`
+    const catLabel = categoriasFiltro.length > 0
+      ? categoriasFiltro.map(c => CATEGORIAS.find(x => x.value === c)?.label).join(', ')
+      : 'todos os itens'
+
+    const titulo = `Lista — ${semanasPeriodo} sem. — ${catLabel} — ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`
+
     const { data: novaLista, error } = await supabase.from('listas_compra').insert({
       titulo, tipo: 'mensal', semana_referencia: 1, total_estimado: 0,
     }).select().single()
@@ -147,6 +163,21 @@ export default function ComprasPage() {
     carregar()
   }
 
+  async function limparLista() {
+    if (!lista) return
+    const supabase = getSupabase()
+    if (limparCategoria === 'todas') {
+      await supabase.from('compra_itens').delete().eq('lista_id', lista.id)
+      toast.success('Lista apagada!')
+    } else {
+      await supabase.from('compra_itens').delete().eq('lista_id', lista.id).eq('categoria', limparCategoria)
+      const label = CATEGORIAS.find(c => c.value === limparCategoria)?.label
+      toast.success(`${label} removido da lista!`)
+    }
+    setModalLimpar(false)
+    carregar()
+  }
+
   async function adicionarItem() {
     if (!novoItem.nome.trim() || !lista) return
     setSalvando(true)
@@ -162,7 +193,7 @@ export default function ComprasPage() {
       status: 'pendente',
     })
     toast.success('Item adicionado!')
-    setModalItem({ open: false })
+    setModalItem(false)
     setNovoItem({ nome: '', quantidade: '', unidade: 'kg', categoria: 'secos' })
     setSalvando(false)
     carregar()
@@ -230,8 +261,13 @@ export default function ComprasPage() {
         subtitle="Baseada no cardápio real das preparações"
         action={
           <div style={{ display: 'flex', gap: '8px' }}>
+            {lista && lista.itens.length > 0 && (
+              <button className="btn btn-sm" onClick={() => setModalLimpar(true)} style={{ color: '#A32D2D' }}>
+                <Trash2 size={13} /> Limpar
+              </button>
+            )}
             {lista && (
-              <button className="btn btn-sm btn-primary" onClick={() => setModalItem({ open: true })}>
+              <button className="btn btn-sm btn-primary" onClick={() => setModalItem(true)}>
                 <Plus size={13} /> Adicionar item
               </button>
             )}
@@ -241,7 +277,7 @@ export default function ComprasPage() {
             </button>
             {isAdmin && lista && lista.status === 'pendente' && lista.itens.length > 0 && (
               <button className="btn btn-sm btn-primary" onClick={aprovarLista} disabled={aprovando}>
-                <Check size={13} /> {aprovando ? 'Aprovando...' : 'Aprovar lista'}
+                <Check size={13} /> {aprovando ? 'Aprovando...' : 'Aprovar'}
               </button>
             )}
           </div>
@@ -256,7 +292,7 @@ export default function ComprasPage() {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '16px' }}>
                 {isAdmin && <MetricCard label="Total estimado" value={formatBRL(totalEstimado)} />}
-                <MetricCard label="Itens pendentes" value={pendentes} color={pendentes > 0 ? '#BA7517' : undefined} />
+                <MetricCard label="Pendentes" value={pendentes} color={pendentes > 0 ? '#BA7517' : undefined} />
                 <MetricCard label="Recebidos" value={recebidos} color="#1D9E75" />
                 <MetricCard label="Status" value={lista.status === 'aprovado' ? 'Aprovada' : 'Pendente'} color={lista.status === 'aprovado' ? '#1D9E75' : '#BA7517'} />
               </div>
@@ -271,9 +307,7 @@ export default function ComprasPage() {
               <div style={{ fontSize: '13px', color: '#888780', marginBottom: '20px' }}>
                 Clique em "Gerar lista" para calcular o que precisa comprar baseado no cardápio
               </div>
-              <button className="btn btn-primary" onClick={() => setModalGerar(true)}>
-                Gerar lista do cardápio
-              </button>
+              <button className="btn btn-primary" onClick={() => setModalGerar(true)}>Gerar lista do cardápio</button>
             </div>
           )}
 
@@ -295,19 +329,9 @@ export default function ComprasPage() {
         </>
       )}
 
-      {/* Modal Gerar Lista */}
+      {/* Modal Gerar */}
       <Modal open={modalGerar} onClose={() => setModalGerar(false)} title="Gerar lista de compras" size="sm"
-        footer={
-          <>
-            <button className="btn btn-sm" onClick={() => setModalGerar(false)}>Cancelar</button>
-            <button className="btn btn-sm btn-primary" onClick={gerarListaCardapio} disabled={gerando}>
-              {gerando ? 'Gerando...' : '✓ Gerar lista'}
-            </button>
-          </>
-        }>
-        <div style={{ marginBottom: '16px', fontSize: '13px', color: '#5F5E5A' }}>
-          O sistema vai calcular todos os ingredientes necessários baseado no cardápio real e descontar o que já tem em estoque.
-        </div>
+        footer={<><button className="btn btn-sm" onClick={() => setModalGerar(false)}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={gerarListaCardapio} disabled={gerando}>{gerando ? 'Gerando...' : '✓ Gerar lista'}</button></>}>
         <div className="input-group">
           <label className="input-label">Período</label>
           <select className="input" value={semanasPeriodo} onChange={(e) => setSemanasPeriodo(Number(e.target.value))}>
@@ -318,29 +342,56 @@ export default function ComprasPage() {
             <option value={5}>5 semanas (cardápio completo)</option>
           </select>
         </div>
-        <div style={{ padding: '10px', background: '#EDF3EA', borderRadius: '8px', fontSize: '12px', color: '#3D4F38' }}>
-          💡 Serão somados todos os ingredientes das preparações do período e descontado o estoque atual.
+        <div className="input-group">
+          <label className="input-label">Categorias — deixe em branco para todas</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+            {CATEGORIAS.map(c => (
+              <button key={c.value} onClick={() => toggleCategoria(c.value)}
+                style={{ padding: '4px 12px', borderRadius: '20px', border: categoriasFiltro.includes(c.value) ? 'none' : '1px solid #E5E3DC', background: categoriasFiltro.includes(c.value) ? '#7B9E6B' : '#fff', color: categoriasFiltro.includes(c.value) ? '#fff' : '#5F5E5A', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {categoriasFiltro.length > 0 && (
+            <button onClick={() => setCategoriasFiltro([])} style={{ marginTop: '6px', fontSize: '11px', color: '#888780', background: 'none', border: 'none', cursor: 'pointer' }}>
+              Limpar seleção
+            </button>
+          )}
+        </div>
+        <div style={{ padding: '10px', background: '#EDF3EA', borderRadius: '8px', fontSize: '12px', color: '#3D4F38', marginTop: '4px' }}>
+          💡 Ingredientes das preparações × período, descontando estoque atual.
+          {categoriasFiltro.length > 0 && <span> Filtrando: <strong>{categoriasFiltro.map(c => CATEGORIAS.find(x => x.value === c)?.label).join(', ')}</strong></span>}
+        </div>
+      </Modal>
+
+      {/* Modal Limpar */}
+      <Modal open={modalLimpar} onClose={() => setModalLimpar(false)} title="Limpar lista" size="sm"
+        footer={<><button className="btn btn-sm" onClick={() => setModalLimpar(false)}>Cancelar</button><button className="btn btn-sm" onClick={limparLista} style={{ background: '#A32D2D', color: '#fff', border: 'none' }}>✓ Confirmar</button></>}>
+        <div style={{ marginBottom: '16px', fontSize: '13px', color: '#5F5E5A' }}>
+          Selecione o que deseja apagar da lista atual:
+        </div>
+        <div className="input-group">
+          <label className="input-label">Apagar</label>
+          <select className="input" value={limparCategoria} onChange={(e) => setLimparCategoria(e.target.value)}>
+            <option value="todas">Toda a lista</option>
+            {CATEGORIAS.filter(c => lista?.itens.some(i => i.categoria === c.value)).map(c => (
+              <option key={c.value} value={c.value}>{c.label} apenas</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ padding: '10px', background: '#FCEBEB', borderRadius: '8px', fontSize: '12px', color: '#A32D2D' }}>
+          ⚠️ Esta ação não pode ser desfeita.
         </div>
       </Modal>
 
       {/* Modal adicionar item */}
-      <Modal open={modalItem.open} onClose={() => setModalItem({ open: false })} title="Adicionar item" size="sm"
-        footer={
-          <>
-            <button className="btn btn-sm" onClick={() => setModalItem({ open: false })}>Cancelar</button>
-            <button className="btn btn-sm btn-primary" onClick={adicionarItem} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Adicionar'}</button>
-          </>
-        }>
+      <Modal open={modalItem} onClose={() => setModalItem(false)} title="Adicionar item" size="sm"
+        footer={<><button className="btn btn-sm" onClick={() => setModalItem(false)}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={adicionarItem} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Adicionar'}</button></>}>
         <div className="input-group">
           <label className="input-label">Categoria</label>
           <select className="input" value={filtroCategoria} onChange={(e) => { setFiltroCategoria(e.target.value); setNovoItem(f => ({ ...f, nome: '', unidade: 'kg' })) }}>
             <option value="">Todas</option>
-            <option value="carnes">Carnes</option>
-            <option value="hortifruti">Hortifruti</option>
-            <option value="secos">Secos</option>
-            <option value="laticinios">Laticínios</option>
-            <option value="bebidas">Bebidas</option>
-            <option value="outros">Outros</option>
+            {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
         <div className="input-group">
@@ -369,12 +420,7 @@ export default function ComprasPage() {
 
       {/* Modal preço */}
       <Modal open={modalPreco.open} onClose={() => setModalPreco({ open: false })} title={`Registrar compra — ${modalPreco.item?.nome_item}`} size="sm"
-        footer={
-          <>
-            <button className="btn btn-sm" onClick={() => setModalPreco({ open: false })}>Cancelar</button>
-            <button className="btn btn-sm btn-primary" onClick={salvarPrecoECompra} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Registrar'}</button>
-          </>
-        }>
+        footer={<><button className="btn btn-sm" onClick={() => setModalPreco({ open: false })}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={salvarPrecoECompra} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Registrar'}</button></>}>
         <div style={{ padding: '10px', background: '#E1F5EE', borderRadius: '8px', marginBottom: '14px', fontSize: '13px', color: '#085041' }}>
           Quantidade: <strong>{modalPreco.item?.quantidade_comprar} {modalPreco.item?.unidade}</strong>
         </div>
