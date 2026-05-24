@@ -210,3 +210,21 @@ body {
   table { font-size: 6.5pt !important; }
   table td, table th { padding: 2px 3px !important; line-height: 1.2 !important; }
 }
+
+@media (max-width: 768px) {
+  /* Remove margin do sidebar no mobile */
+  div[style*="marginLeft: 220"] { margin-left: 0 !important; }
+  div[style*="marginLeft:220"] { margin-left: 0 !important; }
+  
+  /* Padding menor no mobile */
+  main { padding: 12px !important; }
+  
+  /* Grids viram coluna única no mobile */
+  div[style*="gridTemplateColumns: '1fr 1fr'"] { grid-template-columns: 1fr !important; }
+  div[style*="gridTemplateColumns: 'repeat(4"] { grid-template-columns: 1fr 1fr !important; }
+  div[style*="gridTemplateColumns: 'repeat(7"] { grid-template-columns: repeat(3, 1fr) !important; }
+  div[style*="gridTemplateColumns: 'repeat(2"] { grid-template-columns: 1fr !important; }
+  
+  /* Tabelas com scroll */
+  .table-wrapper { overflow-x: auto !important; }
+}
