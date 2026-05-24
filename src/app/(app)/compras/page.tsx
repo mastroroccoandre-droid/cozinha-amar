@@ -209,24 +209,50 @@ export default function ComprasPage() {
         if (vezes === 0) continue
 
         // quantidade_por_idoso já é o total da refeição (nutricionista já calculou)
-        const qtdTotal = ing.quantidade_por_idoso * vezes
+        let qtd = ing.quantidade_por_idoso * vezes
+        let unidade = ing.unidade
 
         // Normaliza nome para evitar duplicatas por acento (ex: "Moída" vs "Moida")
         const chaveIng = ing.nome_ingrediente.toLowerCase()
           .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        if (!totais[chaveIng]) {
+
+        // Se já existe o item com unidade diferente, converte para a unidade base (kg ou L)
+        if (totais[chaveIng]) {
+          const unidadeExistente = totais[chaveIng].unidade
+          // Converter g → kg
+          if (unidade === 'g' && unidadeExistente === 'kg') { qtd /= 1000; unidade = 'kg' }
+          if (unidade === 'kg' && unidadeExistente === 'g') {
+            totais[chaveIng].quantidade *= 1000 / 1000  // já existente em g → kg
+            totais[chaveIng].quantidadeNecessaria = totais[chaveIng].quantidade
+            totais[chaveIng].unidade = 'kg'
+            unidade = 'kg'
+          }
+          // Converter ml → L
+          if (unidade === 'ml' && unidadeExistente === 'L') { qtd /= 1000; unidade = 'L' }
+          if (unidade === 'L' && unidadeExistente === 'ml') {
+            totais[chaveIng].quantidade /= 1000
+            totais[chaveIng].quantidadeNecessaria = totais[chaveIng].quantidade
+            totais[chaveIng].unidade = 'L'
+            unidade = 'L'
+          }
+        } else {
+          // Primeiro registro: se está em g, converte para kg; se ml, para L
+          if (unidade === 'g') { qtd /= 1000; unidade = 'kg' }
+          if (unidade === 'ml') { qtd /= 1000; unidade = 'L' }
+
           totais[chaveIng] = {
             nome: ing.nome_ingrediente,
             categoria: ing.categoria,
-            unidade: ing.unidade,
+            unidade,
             produto_id: ing.produto_id || null,
             quantidadeNecessaria: 0,
             quantidadeEstoque: 0,
             quantidade: 0,
           }
         }
-        totais[chaveIng].quantidadeNecessaria += qtdTotal
-        totais[chaveIng].quantidade += qtdTotal
+
+        totais[chaveIng].quantidadeNecessaria += qtd
+        totais[chaveIng].quantidade += qtd
       }
 
       // 7. Buscar estoque atual para todos os itens (para registrar quantidade_estoque)
