@@ -145,13 +145,6 @@ export default function ComprasPage() {
         contagem[chave] = (contagem[chave] || 0) + 1
       }
 
-      // 3. Buscar configurações para num_idosos
-      const { data: config } = await supabase
-        .from('configuracoes')
-        .select('num_idosos')
-        .single()
-      const numIdosos = config?.num_idosos || 0
-
       // 4. Buscar preparações filtrando pelo nome (padrão: "Refeição SemX/DiaY")
       const { data: todasPreps } = await supabase
         .from('preparacoes')
@@ -203,9 +196,12 @@ export default function ComprasPage() {
         const vezes = contagem[chave] || 0
         if (vezes === 0) continue
 
-        const qtdTotal = ing.quantidade_por_idoso * numIdosos * vezes
+        // quantidade_por_idoso já é o total da refeição (nutricionista já calculou)
+        const qtdTotal = ing.quantidade_por_idoso * vezes
 
+        // Normaliza nome para evitar duplicatas por acento (ex: "Moída" vs "Moida")
         const chaveIng = ing.nome_ingrediente.toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         if (!totais[chaveIng]) {
           totais[chaveIng] = {
             nome: ing.nome_ingrediente,
