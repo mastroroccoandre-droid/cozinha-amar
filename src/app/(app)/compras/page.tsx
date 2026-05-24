@@ -105,6 +105,7 @@ export default function ComprasPage() {
       .select('*')
       .eq('lista_id', listaId)
       .order('categoria')
+      .order('nome_item')
     setItens(data || [])
   }
 
@@ -243,8 +244,10 @@ export default function ComprasPage() {
         }
       }
 
-      // 8. Filtrar itens com quantidade > 0
-      const itensFinal = Object.values(totais).filter(i => i.quantidade > 0)
+      // 8. Filtrar itens com quantidade > 0 e ordenar por nome
+      const itensFinal = Object.values(totais)
+        .filter(i => i.quantidade > 0)
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 
       if (itensFinal.length === 0) {
         alert('Nenhum item gerado. Verifique as semanas/categorias selecionadas.')
