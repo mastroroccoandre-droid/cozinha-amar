@@ -1,498 +1,704 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Plus, Check, RefreshCw, Trash2, X } from 'lucide-react'
-import { getSupabase } from '@/lib/supabase'
-import { Modal, SectionHeader, Badge, Alert, MetricCard } from '@/components/ui'
-import { formatBRL, CATEGORIA_LABELS } from '@/lib/utils'
-import { useAppStore } from '@/lib/store'
-import toast from 'react-hot-toast'
-import type { ListaCompra, CompraItem, CategoriaAlimento } from '@/types'
+import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@supabase/supabase-js'
 
-const EMAILS_ADMIN = ['admin@residencialamar.com.br', 'mxmastrorocco@gmail.com']
+const supabase = createClient(
+  'https://xoatpbqaylczirkqfsoh.supabase.co',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
-const CATEGORIAS = [
-  { value: 'hortifruti', label: 'Hortifruti' },
-  { value: 'carnes', label: 'Carnes' },
-  { value: 'secos', label: 'Secos' },
-  { value: 'laticinios', label: 'Laticínios' },
-  { value: 'bebidas', label: 'Bebidas' },
-  { value: 'outros', label: 'Outros' },
-]
+type CompraItem = {
+  id: string
+  lista_id: string
+  produto_id: string | null
+  nome_item: string
+  categoria: string
+  quantidade_comprar: number
+  unidade: string
+  preco_unitario: number | null
+  total_estimado: number | null
+  status: string
+}
+
+type Lista = {
+  id: string
+  titulo: string
+  tipo: string
+  status: string
+  total_estimado: number | null
+  created_at: string
+}
+
+const CATEGORIAS = ['hortifruti', 'carnes', 'secos', 'laticinios', 'bebidas', 'outros']
+const CATEGORIA_LABELS: Record<string, string> = {
+  hortifruti: 'Hortifruti',
+  carnes: 'Carnes',
+  secos: 'Secos',
+  laticinios: 'Laticínios',
+  bebidas: 'Bebidas',
+  outros: 'Outros',
+}
+
+function getSemanaDoMes(data: Date): number {
+  const primeiroDia = new Date(data.getFullYear(), data.getMonth(), 1)
+  const diaDaSemana = primeiroDia.getDay()
+  return Math.min(5, Math.ceil((data.getDate() + diaDaSemana) / 7))
+}
+
+// Mapeia todos os dias de um mês para { semana, dia_semana }
+function mapearDiasDoMes(ano: number, mes: number): { semana: number; dia_semana: number }[] {
+  const dias: { semana: number; dia_semana: number }[] = []
+  const totalDias = new Date(ano, mes + 1, 0).getDate()
+  for (let d = 1; d <= totalDias; d++) {
+    const data = new Date(ano, mes, d)
+    const semana = getSemanaDoMes(data)
+    const dia_semana = data.getDay() === 0 ? 0 : data.getDay() // 0=Dom...6=Sáb (getDay já é 0=Dom)
+    // No sistema: 0=Segunda, 1=Terça, 2=Quarta, 3=Quinta, 4=Sexta, 5=Sábado, 6=Domingo
+    // getDay(): 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
+    const diaSistema = data.getDay() === 0 ? 6 : data.getDay() - 1
+    dias.push({ semana, dia_semana: diaSistema })
+  }
+  return dias
+}
 
 export default function ComprasPage() {
-  const { config } = useAppStore()
-  const [lista, setLista] = useState<(ListaCompra & { itens: CompraItem[] }) | null>(null)
+  const [listas, setListas] = useState<Lista[]>([])
+  const [listaSelecionada, setListaSelecionada] = useState<Lista | null>(null)
+  const [itens, setItens] = useState<CompraItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [gerando, setGerando] = useState(false)
-  const [aprovando, setAprovando] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [modalItem, setModalItem] = useState(false)
-  const [modalGerar, setModalGerar] = useState(false)
-  const [modalLimpar, setModalLimpar] = useState(false)
-  const [modalPreco, setModalPreco] = useState<{ open: boolean; item?: CompraItem }>({ open: false })
-  const [novoItem, setNovoItem] = useState({ nome: '', quantidade: '', unidade: 'kg', categoria: 'secos' as CategoriaAlimento })
-  const [precoItem, setPrecoItem] = useState({ preco: '', fornecedor: '' })
-  const [salvando, setSalvando] = useState(false)
-  const [ingredientes, setIngredientes] = useState<{nome: string, unidade: string, categoria: string}[]>([])
-  const [filtroCategoria, setFiltroCategoria] = useState('')
-  // Gerar
-  const [semanasPeriodo, setSemanasPeriodo] = useState(4)
-  const [categoriasFiltro, setCategoriasFiltro] = useState<string[]>([]) // vazio = todas
-  // Limpar
-  const [limparCategoria, setLimparCategoria] = useState('todas')
+  const [gerandoLista, setGerandoLista] = useState(false)
+  const [modalAberto, setModalAberto] = useState(false)
+  const [modalPreco, setModalPreco] = useState<CompraItem | null>(null)
+  const [precoInput, setPrecoInput] = useState('')
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
 
-  async function carregarIngredientes() {
-    const supabase = getSupabase()
-    const { data } = await supabase.from('preparacao_ingredientes').select('nome_ingrediente, unidade, categoria').order('nome_ingrediente')
-    const mapa = new Map<string, {unidade: string, categoria: string}>()
-    ;(data ?? []).forEach((i: any) => {
-      if (!mapa.has(i.nome_ingrediente)) {
-        let u = i.unidade
-        if (u === 'g') u = 'kg'
-        if (u === 'ml') u = 'L'
-        mapa.set(i.nome_ingrediente, { unidade: u, categoria: i.categoria ?? 'outros' })
-      }
-    })
-    setIngredientes(Array.from(mapa.entries()).map(([nome, v]) => ({ nome, ...v })).sort((a, b) => a.nome.localeCompare(b.nome)))
-  }
+  // Modal gerar lista
+  const hoje = new Date()
+  const [mesRef, setMesRef] = useState(hoje.getMonth()) // 0-11
+  const [anoRef, setAnoRef] = useState(hoje.getFullYear())
+  const [semanasSelecionadas, setSemanasSelecionadas] = useState<number[]>([1, 2, 3, 4, 5])
+  const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<string[]>([...CATEGORIAS])
+  const [descontarEstoque, setDescontarEstoque] = useState(false)
 
-  async function carregar() {
-    const supabase = getSupabase()
-    const [{ data }, { data: authData }] = await Promise.all([
-      supabase.from('listas_compra').select('*, itens:compra_itens(*)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.auth.getUser(),
-    ])
-    setIsAdmin(EMAILS_ADMIN.includes(authData.user?.email ?? ''))
-    if (!data) {
-      const { data: novaLista } = await supabase.from('listas_compra').insert({
-        titulo: 'Lista de compras — ' + new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
-        tipo: 'mensal', semana_referencia: 1, total_estimado: 0,
-      }).select('*, itens:compra_itens(*)').single()
-      setLista(novaLista)
-    } else {
-      setLista(data)
+  const carregarListas = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('listas_compra')
+      .select('*')
+      .order('created_at', { ascending: false })
+    setListas(data || [])
+    if (data && data.length > 0 && !listaSelecionada) {
+      setListaSelecionada(data[0])
     }
     setLoading(false)
+  }, [listaSelecionada])
+
+  useEffect(() => {
+    carregarListas()
+  }, [])
+
+  useEffect(() => {
+    if (listaSelecionada) carregarItens(listaSelecionada.id)
+  }, [listaSelecionada])
+
+  async function carregarItens(listaId: string) {
+    const { data } = await supabase
+      .from('compra_itens')
+      .select('*')
+      .eq('lista_id', listaId)
+      .order('categoria')
+    setItens(data || [])
   }
 
-  useEffect(() => { carregar(); carregarIngredientes() }, [])
-
-  function toggleCategoria(cat: string) {
-    setCategoriasFiltro(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
+  function toggleSemana(s: number) {
+    setSemanasSelecionadas(prev =>
+      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s].sort()
+    )
   }
 
-  async function gerarListaCardapio() {
-    setGerando(true)
-    setModalGerar(false)
-    const supabase = getSupabase()
+  function toggleCategoria(c: string) {
+    setCategoriasSelecionadas(prev =>
+      prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+    )
+  }
 
-    const { data: ings } = await supabase
-      .from('preparacao_ingredientes')
-      .select('nome_ingrediente, quantidade_por_idoso, unidade, categoria, produto_id')
-
-    const { data: produtos } = await supabase.from('produtos').select('*').eq('ativo', true)
-
-    const mapaIngredientes = new Map<string, { quantidade: number; unidade: string; categoria: string; produto_id: string | null }>()
-
-    ;(ings ?? []).forEach((ing: any) => {
-      // Filtra categorias se selecionadas
-      if (categoriasFiltro.length > 0 && !categoriasFiltro.includes(ing.categoria ?? 'outros')) return
-
-      const qtdPorSemana = ing.quantidade_por_idoso / 5
-      const qtdPeriodo = qtdPorSemana * semanasPeriodo
-      let qtd = qtdPeriodo
-      let unidade = ing.unidade
-      if (unidade === 'g') { qtd = qtd / 1000; unidade = 'kg' }
-      if (unidade === 'ml') { qtd = qtd / 1000; unidade = 'L' }
-
-      const atual = mapaIngredientes.get(ing.nome_ingrediente)
-      if (atual) {
-        mapaIngredientes.set(ing.nome_ingrediente, { ...atual, quantidade: atual.quantidade + qtd })
-      } else {
-        mapaIngredientes.set(ing.nome_ingrediente, { quantidade: qtd, unidade, categoria: ing.categoria ?? 'outros', produto_id: ing.produto_id })
-      }
-    })
-
-    const estoqueMap = new Map<string, number>()
-    ;(produtos ?? []).forEach((p: any) => { estoqueMap.set(p.nome, p.quantidade_atual) })
-
-    const itensComprar = Array.from(mapaIngredientes.entries())
-      .map(([nome, v]) => {
-        const emEstoque = estoqueMap.get(nome) ?? 0
-        const comprar = Math.max(0, v.quantidade - emEstoque)
-        return { nome, ...v, emEstoque, comprar }
-      })
-      .filter(i => i.comprar > 0)
-      .sort((a, b) => a.nome.localeCompare(b.nome))
-
-    if (itensComprar.length === 0) {
-      toast.success('Estoque suficiente para o período e categorias selecionadas!')
-      setGerando(false)
+  async function gerarLista() {
+    if (semanasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma semana.')
+      return
+    }
+    if (categoriasSelecionadas.length === 0) {
+      alert('Selecione pelo menos uma categoria.')
       return
     }
 
-    const catLabel = categoriasFiltro.length > 0
-      ? categoriasFiltro.map(c => CATEGORIAS.find(x => x.value === c)?.label).join(', ')
-      : 'todos os itens'
+    setGerandoLista(true)
 
-    const titulo = `Lista — ${semanasPeriodo} sem. — ${catLabel} — ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`
+    try {
+      // 1. Mapear dias reais do mês selecionado
+      const diasDoMes = mapearDiasDoMes(anoRef, mesRef)
 
-    const { data: novaLista, error } = await supabase.from('listas_compra').insert({
-      titulo, tipo: 'mensal', semana_referencia: 1, total_estimado: 0,
-    }).select().single()
+      // 2. Contar quantas vezes cada combinação (semana, dia_semana) aparece no mês
+      // filtrado pelas semanas selecionadas
+      const contagem: Record<string, number> = {}
+      for (const dia of diasDoMes) {
+        if (!semanasSelecionadas.includes(dia.semana)) continue
+        const chave = `${dia.semana}_${dia.dia_semana}`
+        contagem[chave] = (contagem[chave] || 0) + 1
+      }
 
-    if (error || !novaLista) { toast.error('Erro ao gerar lista'); setGerando(false); return }
+      // 3. Buscar configurações para num_idosos
+      const { data: config } = await supabase
+        .from('configuracoes')
+        .select('num_idosos')
+        .single()
+      const numIdosos = config?.num_idosos || 0
 
-    await supabase.from('compra_itens').insert(
-      itensComprar.map(i => ({
+      // 4. Buscar preparações das semanas selecionadas
+      const { data: preparacoes } = await supabase
+        .from('preparacoes')
+        .select('id, nome, tipo_refeicao')
+        .in('semana', semanasSelecionadas) // assumindo campo semana — ajustar se necessário
+
+      // Fallback: buscar todas e filtrar pelo nome (padrão: "Sem1/Dia0 — Desjejum")
+      let prepsFiltradas: any[] = []
+      if (!preparacoes || preparacoes.length === 0) {
+        const { data: todasPreps } = await supabase
+          .from('preparacoes')
+          .select('id, nome, tipo_refeicao')
+        prepsFiltradas = (todasPreps || []).filter(p => {
+          const match = p.nome?.match(/Sem(\d+)\/Dia(\d+)/)
+          if (!match) return false
+          const semana = parseInt(match[1])
+          return semanasSelecionadas.includes(semana)
+        })
+      } else {
+        prepsFiltradas = preparacoes
+      }
+
+      // 5. Buscar ingredientes dessas preparações
+      const prepIds = prepsFiltradas.map(p => p.id)
+      if (prepIds.length === 0) {
+        alert('Nenhuma preparação encontrada para as semanas selecionadas.')
+        setGerandoLista(false)
+        return
+      }
+
+      const { data: ingredientes } = await supabase
+        .from('preparacao_ingredientes')
+        .select('*')
+        .in('preparacao_id', prepIds)
+        .in('categoria', categoriasSelecionadas)
+
+      // 6. Para cada ingrediente, calcular quantidade necessária
+      // baseada nos dias reais do mês
+      const totais: Record<string, {
+        nome: string
+        categoria: string
+        unidade: string
+        produto_id: string | null
+        quantidade: number
+      }> = {}
+
+      for (const ing of ingredientes || []) {
+        // Descobrir semana e dia_semana da preparação
+        const prep = prepsFiltradas.find(p => p.id === ing.preparacao_id)
+        if (!prep) continue
+
+        const match = prep.nome?.match(/Sem(\d+)\/Dia(\d+)/)
+        if (!match) continue
+        const semana = parseInt(match[1])
+        const diaSistema = parseInt(match[2])
+
+        const chave = `${semana}_${diaSistema}`
+        const vezes = contagem[chave] || 0
+        if (vezes === 0) continue
+
+        const qtdTotal = ing.quantidade_por_idoso * numIdosos * vezes
+
+        const chaveIng = ing.nome_ingrediente.toLowerCase()
+        if (!totais[chaveIng]) {
+          totais[chaveIng] = {
+            nome: ing.nome_ingrediente,
+            categoria: ing.categoria,
+            unidade: ing.unidade,
+            produto_id: ing.produto_id || null,
+            quantidade: 0,
+          }
+        }
+        totais[chaveIng].quantidade += qtdTotal
+      }
+
+      // 7. Descontar estoque se solicitado
+      if (descontarEstoque) {
+        const { data: produtos } = await supabase
+          .from('produtos')
+          .select('id, nome, quantidade_atual, unidade')
+
+        for (const chave of Object.keys(totais)) {
+          const item = totais[chave]
+          const produto = (produtos || []).find(
+            p => p.nome.toLowerCase() === item.nome.toLowerCase() ||
+                 p.id === item.produto_id
+          )
+          if (produto) {
+            // Converter unidades se necessário
+            let estoqueConvertido = produto.quantidade_atual
+            if (item.unidade === 'g' && produto.unidade === 'kg') estoqueConvertido *= 1000
+            if (item.unidade === 'kg' && produto.unidade === 'g') estoqueConvertido /= 1000
+            if (item.unidade === 'ml' && produto.unidade === 'L') estoqueConvertido *= 1000
+            if (item.unidade === 'L' && produto.unidade === 'ml') estoqueConvertido /= 1000
+            item.quantidade = Math.max(0, item.quantidade - estoqueConvertido)
+          }
+        }
+      }
+
+      // 8. Filtrar itens com quantidade > 0
+      const itensFinal = Object.values(totais).filter(i => i.quantidade > 0)
+
+      if (itensFinal.length === 0) {
+        alert('Nenhum item gerado. Verifique as semanas/categorias selecionadas.')
+        setGerandoLista(false)
+        return
+      }
+
+      // 9. Criar lista no banco
+      const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+      const titulo = `Lista ${mesesNomes[mesRef]}/${anoRef} — Sem. ${semanasSelecionadas.join(',')}${descontarEstoque ? ' (c/ estoque)' : ''}`
+
+      const { data: novaLista, error: erroLista } = await supabase
+        .from('listas_compra')
+        .insert({ titulo, tipo: 'mensal', status: 'aberta', total_estimado: null })
+        .select()
+        .single()
+
+      if (erroLista || !novaLista) {
+        alert('Erro ao criar lista.')
+        setGerandoLista(false)
+        return
+      }
+
+      // 10. Inserir itens
+      const itensParaInserir = itensFinal.map(i => ({
         lista_id: novaLista.id,
         produto_id: i.produto_id,
         nome_item: i.nome,
         categoria: i.categoria,
-        quantidade_necessaria: parseFloat(i.quantidade.toFixed(2)),
-        quantidade_estoque: parseFloat(i.emEstoque.toFixed(2)),
-        quantidade_comprar: parseFloat(i.comprar.toFixed(2)),
+        quantidade_comprar: Math.round(i.quantidade * 100) / 100,
         unidade: i.unidade,
+        preco_unitario: null,
+        total_estimado: null,
         status: 'pendente',
       }))
-    )
 
-    toast.success(`Lista gerada com ${itensComprar.length} itens!`)
-    setGerando(false)
-    carregar()
-  }
+      await supabase.from('compra_itens').insert(itensParaInserir)
 
-  async function limparLista() {
-    if (!lista) return
-    const supabase = getSupabase()
-    if (limparCategoria === 'todas') {
-      await supabase.from('compra_itens').delete().eq('lista_id', lista.id)
-      toast.success('Lista apagada!')
-    } else {
-      await supabase.from('compra_itens').delete().eq('lista_id', lista.id).eq('categoria', limparCategoria)
-      const label = CATEGORIAS.find(c => c.value === limparCategoria)?.label
-      toast.success(`${label} removido da lista!`)
+      await carregarListas()
+      setListaSelecionada(novaLista)
+      setModalAberto(false)
+    } catch (err) {
+      console.error(err)
+      alert('Erro ao gerar lista.')
     }
-    setModalLimpar(false)
-    carregar()
-  }
 
-  async function adicionarItem() {
-    if (!novoItem.nome.trim() || !lista) return
-    setSalvando(true)
-    const supabase = getSupabase()
-    await supabase.from('compra_itens').insert({
-      lista_id: lista.id,
-      nome_item: novoItem.nome,
-      categoria: novoItem.categoria,
-      quantidade_comprar: parseFloat(novoItem.quantidade) || 0,
-      quantidade_necessaria: parseFloat(novoItem.quantidade) || 0,
-      quantidade_estoque: 0,
-      unidade: novoItem.unidade,
-      status: 'pendente',
-    })
-    toast.success('Item adicionado!')
-    setModalItem(false)
-    setNovoItem({ nome: '', quantidade: '', unidade: 'kg', categoria: 'secos' })
-    setSalvando(false)
-    carregar()
-  }
-
-  async function excluirItem(itemId: string) {
-    const supabase = getSupabase()
-    await supabase.from('compra_itens').delete().eq('id', itemId)
-    toast.success('Item removido')
-    carregar()
+    setGerandoLista(false)
   }
 
   async function marcarComprado(item: CompraItem) {
-    if (isAdmin) {
-      setModalPreco({ open: true, item })
-      setPrecoItem({ preco: item.preco_unitario?.toString() ?? '', fornecedor: '' })
-    } else {
-      const supabase = getSupabase()
-      await supabase.from('compra_itens').update({ status: 'recebido' }).eq('id', item.id)
-      toast.success('Item marcado como recebido')
-      carregar()
+    if (item.status === 'comprado') return
+    setModalPreco(item)
+    setPrecoInput('')
+  }
+
+  async function confirmarCompra() {
+    if (!modalPreco) return
+    const preco = parseFloat(precoInput.replace(',', '.')) || 0
+    const total = preco * modalPreco.quantidade_comprar
+
+    await supabase
+      .from('compra_itens')
+      .update({ status: 'comprado', preco_unitario: preco || null, total_estimado: total || null })
+      .eq('id', modalPreco.id)
+
+    // Registrar entrada no estoque se tiver produto vinculado
+    if (modalPreco.produto_id) {
+      const { data: prod } = await supabase
+        .from('produtos')
+        .select('quantidade_atual, unidade')
+        .eq('id', modalPreco.produto_id)
+        .single()
+
+      if (prod) {
+        let qtdEntrada = modalPreco.quantidade_comprar
+        // Converter se necessário (item em g, produto em kg)
+        if (modalPreco.unidade === 'g' && prod.unidade === 'kg') qtdEntrada /= 1000
+        if (modalPreco.unidade === 'kg' && prod.unidade === 'g') qtdEntrada *= 1000
+        if (modalPreco.unidade === 'ml' && prod.unidade === 'L') qtdEntrada /= 1000
+        if (modalPreco.unidade === 'L' && prod.unidade === 'ml') qtdEntrada *= 1000
+
+        const nova = (prod.quantidade_atual || 0) + qtdEntrada
+
+        await supabase
+          .from('produtos')
+          .update({ quantidade_atual: nova })
+          .eq('id', modalPreco.produto_id)
+
+        await supabase.from('movimentacoes_estoque').insert({
+          produto_id: modalPreco.produto_id,
+          tipo: 'entrada',
+          quantidade: qtdEntrada,
+          quantidade_anterior: prod.quantidade_atual,
+          quantidade_posterior: nova,
+          motivo: `Compra — ${listaSelecionada?.titulo || ''}`,
+        })
+      }
     }
+
+    setModalPreco(null)
+    if (listaSelecionada) carregarItens(listaSelecionada.id)
   }
 
-  async function salvarPrecoECompra() {
-    if (!modalPreco.item) return
-    setSalvando(true)
-    const supabase = getSupabase()
-    const preco = parseFloat(precoItem.preco) || 0
-    const total = preco * (modalPreco.item.quantidade_comprar ?? 0)
-    await supabase.from('compra_itens').update({ status: 'recebido', preco_unitario: preco, total_estimado: total }).eq('id', modalPreco.item.id)
-    if (modalPreco.item.produto_id) {
-      await supabase.from('movimentacoes_estoque').insert({
-        produto_id: modalPreco.item.produto_id, tipo: 'entrada',
-        quantidade: modalPreco.item.quantidade_comprar,
-        quantidade_anterior: 0, quantidade_posterior: modalPreco.item.quantidade_comprar,
-        motivo: `Compra${precoItem.fornecedor ? ` — ${precoItem.fornecedor}` : ''} — ${formatBRL(total)}`,
-      })
-    }
-    toast.success('Compra registrada!')
-    setModalPreco({ open: false })
-    setSalvando(false)
-    carregar()
+  async function limparLista(categoria?: string) {
+    if (!listaSelecionada) return
+    const confirmar = confirm(
+      categoria
+        ? `Remover todos os itens de ${CATEGORIA_LABELS[categoria]} desta lista?`
+        : 'Remover TODOS os itens desta lista?'
+    )
+    if (!confirmar) return
+
+    let query = supabase.from('compra_itens').delete().eq('lista_id', listaSelecionada.id)
+    if (categoria) query = query.eq('categoria', categoria)
+    await query
+    carregarItens(listaSelecionada.id)
   }
 
-  async function aprovarLista() {
-    if (!lista) return
-    setAprovando(true)
-    const supabase = getSupabase()
-    await supabase.from('listas_compra').update({ status: 'aprovado', aprovado_em: new Date().toISOString() }).eq('id', lista.id)
-    toast.success('Lista aprovada!')
-    setAprovando(false)
-    carregar()
+  async function excluirLista() {
+    if (!listaSelecionada) return
+    if (!confirm(`Excluir a lista "${listaSelecionada.titulo}"?`)) return
+    await supabase.from('compra_itens').delete().eq('lista_id', listaSelecionada.id)
+    await supabase.from('listas_compra').delete().eq('id', listaSelecionada.id)
+    setListaSelecionada(null)
+    setItens([])
+    carregarListas()
   }
 
-  const categorias = lista ? Array.from(new Set(lista.itens.map(i => i.categoria).filter(Boolean))) as CategoriaAlimento[] : []
-  const totalEstimado = lista?.itens.reduce((a, i) => a + (i.total_estimado ?? 0), 0) ?? 0
-  const pendentes = lista?.itens.filter(i => i.status === 'pendente').length ?? 0
-  const recebidos = lista?.itens.filter(i => i.status === 'recebido').length ?? 0
+  const itensFiltrados = filtroCategoria === 'todas'
+    ? itens
+    : itens.filter(i => i.categoria === filtroCategoria)
+
+  const itensPorCategoria = CATEGORIAS.reduce((acc, cat) => {
+    acc[cat] = itensFiltrados.filter(i => i.categoria === cat)
+    return acc
+  }, {} as Record<string, CompraItem[]>)
+
+  const totalEstimado = itens
+    .filter(i => i.total_estimado)
+    .reduce((s, i) => s + (i.total_estimado || 0), 0)
+
+  const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const anosDisponiveis = [hoje.getFullYear() - 1, hoje.getFullYear(), hoje.getFullYear() + 1]
+
+  if (loading) return <div className="p-8 text-gray-500">Carregando...</div>
 
   return (
-    <div>
-      <SectionHeader
-        title="Lista de Compras"
-        subtitle="Baseada no cardápio real das preparações"
-        action={
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {lista && lista.itens.length > 0 && (
-              <button className="btn btn-sm" onClick={() => setModalLimpar(true)} style={{ color: '#A32D2D' }}>
-                <Trash2 size={13} /> Limpar
-              </button>
-            )}
-            {lista && (
-              <button className="btn btn-sm btn-primary" onClick={() => setModalItem(true)}>
-                <Plus size={13} /> Adicionar item
-              </button>
-            )}
-            <button className="btn btn-sm" onClick={() => setModalGerar(true)} disabled={gerando}>
-              <RefreshCw size={13} />
-              {gerando ? 'Gerando...' : 'Gerar lista'}
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Cabeçalho */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-800">Lista de Compras</h1>
+        <button
+          onClick={() => setModalAberto(true)}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-medium"
+        >
+          + Gerar Lista
+        </button>
+      </div>
+
+      {/* Seletor de listas existentes */}
+      {listas.length > 0 && (
+        <div className="mb-4 flex gap-2 flex-wrap">
+          {listas.map(l => (
+            <button
+              key={l.id}
+              onClick={() => setListaSelecionada(l)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                listaSelecionada?.id === l.id
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+              }`}
+            >
+              {l.titulo}
             </button>
-            {isAdmin && lista && lista.status === 'pendente' && lista.itens.length > 0 && (
-              <button className="btn btn-sm btn-primary" onClick={aprovarLista} disabled={aprovando}>
-                <Check size={13} /> {aprovando ? 'Aprovando...' : 'Aprovar'}
-              </button>
-            )}
-          </div>
-        }
-      />
-
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#888780' }}>Carregando...</div>
-      ) : (
-        <>
-          {lista && lista.itens.length > 0 && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '16px' }}>
-                {isAdmin && <MetricCard label="Total estimado" value={formatBRL(totalEstimado)} />}
-                <MetricCard label="Pendentes" value={pendentes} color={pendentes > 0 ? '#BA7517' : undefined} />
-                <MetricCard label="Recebidos" value={recebidos} color="#1D9E75" />
-                <MetricCard label="Status" value={lista.status === 'aprovado' ? 'Aprovada' : 'Pendente'} color={lista.status === 'aprovado' ? '#1D9E75' : '#BA7517'} />
-              </div>
-              <Alert variant="blue">📋 <strong>{lista.titulo}</strong></Alert>
-            </>
-          )}
-
-          {lista && lista.itens.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '60px', background: '#fff', borderRadius: '14px', border: '1px solid #E5E3DC' }}>
-              <div style={{ fontSize: '40px', marginBottom: '12px' }}>🛒</div>
-              <div style={{ fontSize: '16px', fontWeight: 500, marginBottom: '8px' }}>Lista vazia</div>
-              <div style={{ fontSize: '13px', color: '#888780', marginBottom: '20px' }}>
-                Clique em "Gerar lista" para calcular o que precisa comprar baseado no cardápio
-              </div>
-              <button className="btn btn-primary" onClick={() => setModalGerar(true)}>Gerar lista do cardápio</button>
-            </div>
-          )}
-
-          {lista && lista.itens.filter(i => !i.categoria).length > 0 && (
-            <div style={{ marginTop: '20px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#888780', marginBottom: '8px' }}>Outros</div>
-              <TabelaItens itens={lista.itens.filter(i => !i.categoria)} isAdmin={isAdmin} onMarcar={marcarComprado} onExcluir={excluirItem} />
-            </div>
-          )}
-
-          {categorias.map(cat => (
-            <div key={cat} style={{ marginTop: '20px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#888780', marginBottom: '8px' }}>
-                {CATEGORIA_LABELS[cat]}
-              </div>
-              <TabelaItens itens={lista!.itens.filter(i => i.categoria === cat)} isAdmin={isAdmin} onMarcar={marcarComprado} onExcluir={excluirItem} />
-            </div>
           ))}
+        </div>
+      )}
+
+      {/* Lista selecionada */}
+      {listaSelecionada && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <span className="text-gray-600 text-sm">{listaSelecionada.titulo}</span>
+              {totalEstimado > 0 && (
+                <span className="ml-3 text-green-700 font-semibold">
+                  Total estimado: R$ {totalEstimado.toFixed(2)}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={filtroCategoria}
+                onChange={e => setFiltroCategoria(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option value="todas">Todas categorias</option>
+                {CATEGORIAS.map(c => (
+                  <option key={c} value={c}>{CATEGORIA_LABELS[c]}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => limparLista(filtroCategoria !== 'todas' ? filtroCategoria : undefined)}
+                className="text-sm text-red-600 hover:underline px-2"
+              >
+                Limpar{filtroCategoria !== 'todas' ? ` ${CATEGORIA_LABELS[filtroCategoria]}` : ' tudo'}
+              </button>
+              <button
+                onClick={excluirLista}
+                className="text-sm text-red-800 hover:underline px-2"
+              >
+                Excluir lista
+              </button>
+            </div>
+          </div>
+
+          {/* Itens por categoria */}
+          {CATEGORIAS.map(cat => {
+            const grupo = itensPorCategoria[cat]
+            if (!grupo || grupo.length === 0) return null
+            return (
+              <div key={cat} className="mb-6">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2 border-b pb-1">
+                  {CATEGORIA_LABELS[cat]}
+                </h2>
+                <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-4 py-2 text-gray-600">Item</th>
+                        <th className="text-right px-4 py-2 text-gray-600">Qtde</th>
+                        <th className="text-left px-2 py-2 text-gray-600">Un.</th>
+                        <th className="text-right px-4 py-2 text-gray-600">Preço unit.</th>
+                        <th className="text-right px-4 py-2 text-gray-600">Total</th>
+                        <th className="px-4 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grupo.map(item => (
+                        <tr
+                          key={item.id}
+                          className={`border-t ${item.status === 'comprado' ? 'bg-green-50' : ''}`}
+                        >
+                          <td className={`px-4 py-2 ${item.status === 'comprado' ? 'line-through text-gray-400' : ''}`}>
+                            {item.nome_item}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono">
+                            {item.quantidade_comprar % 1 === 0
+                              ? item.quantidade_comprar
+                              : item.quantidade_comprar.toFixed(2)}
+                          </td>
+                          <td className="px-2 py-2 text-gray-500">{item.unidade}</td>
+                          <td className="px-4 py-2 text-right text-gray-500">
+                            {item.preco_unitario ? `R$ ${item.preco_unitario.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-right text-gray-700">
+                            {item.total_estimado ? `R$ ${item.total_estimado.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            {item.status === 'comprado' ? (
+                              <span className="text-green-600 text-xs font-medium">✓ Comprado</span>
+                            ) : (
+                              <button
+                                onClick={() => marcarComprado(item)}
+                                className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200"
+                              >
+                                Marcar comprado
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+
+          {itensFiltrados.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              Nenhum item nesta lista.
+            </div>
+          )}
         </>
       )}
 
-      {/* Modal Gerar */}
-      <Modal open={modalGerar} onClose={() => setModalGerar(false)} title="Gerar lista de compras" size="sm"
-        footer={<><button className="btn btn-sm" onClick={() => setModalGerar(false)}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={gerarListaCardapio} disabled={gerando}>{gerando ? 'Gerando...' : '✓ Gerar lista'}</button></>}>
-        <div className="input-group">
-          <label className="input-label">Período</label>
-          <select className="input" value={semanasPeriodo} onChange={(e) => setSemanasPeriodo(Number(e.target.value))}>
-            <option value={1}>1 semana</option>
-            <option value={2}>2 semanas</option>
-            <option value={3}>3 semanas</option>
-            <option value={4}>4 semanas (1 mês)</option>
-            <option value={5}>5 semanas (cardápio completo)</option>
-          </select>
+      {listas.length === 0 && !loading && (
+        <div className="text-center py-16 text-gray-400">
+          Nenhuma lista gerada ainda. Clique em "+ Gerar Lista" para começar.
         </div>
-        <div className="input-group">
-          <label className="input-label">Categorias — deixe em branco para todas</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-            {CATEGORIAS.map(c => (
-              <button key={c.value} onClick={() => toggleCategoria(c.value)}
-                style={{ padding: '4px 12px', borderRadius: '20px', border: categoriasFiltro.includes(c.value) ? 'none' : '1px solid #E5E3DC', background: categoriasFiltro.includes(c.value) ? '#7B9E6B' : '#fff', color: categoriasFiltro.includes(c.value) ? '#fff' : '#5F5E5A', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
-                {c.label}
+      )}
+
+      {/* Modal Gerar Lista */}
+      {modalAberto && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold mb-4 text-gray-800">Gerar Lista de Compras</h2>
+
+            {/* Mês de referência */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mês de referência</label>
+              <div className="flex gap-2">
+                <select
+                  value={mesRef}
+                  onChange={e => setMesRef(parseInt(e.target.value))}
+                  className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  {mesesNomes.map((m, i) => (
+                    <option key={i} value={i}>{m}</option>
+                  ))}
+                </select>
+                <select
+                  value={anoRef}
+                  onChange={e => setAnoRef(parseInt(e.target.value))}
+                  className="border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  {anosDisponiveis.map(a => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Semanas do cardápio */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Semanas do cardápio</label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => toggleSemana(s)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      semanasSelecionadas.includes(s)
+                        ? 'bg-green-600 text-white border-green-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
+                    }`}
+                  >
+                    Sem {s}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {semanasSelecionadas.length === 0
+                  ? 'Selecione ao menos uma semana'
+                  : `${semanasSelecionadas.length} semana(s) selecionada(s) — dias reais do mês serão calculados automaticamente`}
+              </p>
+            </div>
+
+            {/* Categorias */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Categorias</label>
+              <div className="grid grid-cols-3 gap-2">
+                {CATEGORIAS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => toggleCategoria(c)}
+                    className={`py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      categoriasSelecionadas.includes(c)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    {CATEGORIA_LABELS[c]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Descontar estoque */}
+            <div className="mb-6 flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+              <input
+                type="checkbox"
+                id="descontarEstoque"
+                checked={descontarEstoque}
+                onChange={e => setDescontarEstoque(e.target.checked)}
+                className="w-4 h-4 accent-amber-600"
+              />
+              <label htmlFor="descontarEstoque" className="text-sm text-amber-800 cursor-pointer">
+                Descontar estoque atual
+                <span className="block text-xs text-amber-600 font-normal">
+                  Se desmarcado, compra 100% do cardápio (mais seguro se o estoque não está atualizado)
+                </span>
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setModalAberto(false)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
               </button>
-            ))}
-          </div>
-          {categoriasFiltro.length > 0 && (
-            <button onClick={() => setCategoriasFiltro([])} style={{ marginTop: '6px', fontSize: '11px', color: '#888780', background: 'none', border: 'none', cursor: 'pointer' }}>
-              Limpar seleção
-            </button>
-          )}
-        </div>
-        <div style={{ padding: '10px', background: '#EDF3EA', borderRadius: '8px', fontSize: '12px', color: '#3D4F38', marginTop: '4px' }}>
-          💡 Ingredientes das preparações × período, descontando estoque atual.
-          {categoriasFiltro.length > 0 && <span> Filtrando: <strong>{categoriasFiltro.map(c => CATEGORIAS.find(x => x.value === c)?.label).join(', ')}</strong></span>}
-        </div>
-      </Modal>
-
-      {/* Modal Limpar */}
-      <Modal open={modalLimpar} onClose={() => setModalLimpar(false)} title="Limpar lista" size="sm"
-        footer={<><button className="btn btn-sm" onClick={() => setModalLimpar(false)}>Cancelar</button><button className="btn btn-sm" onClick={limparLista} style={{ background: '#A32D2D', color: '#fff', border: 'none' }}>✓ Confirmar</button></>}>
-        <div style={{ marginBottom: '16px', fontSize: '13px', color: '#5F5E5A' }}>
-          Selecione o que deseja apagar da lista atual:
-        </div>
-        <div className="input-group">
-          <label className="input-label">Apagar</label>
-          <select className="input" value={limparCategoria} onChange={(e) => setLimparCategoria(e.target.value)}>
-            <option value="todas">Toda a lista</option>
-            {CATEGORIAS.filter(c => lista?.itens.some(i => i.categoria === c.value)).map(c => (
-              <option key={c.value} value={c.value}>{c.label} apenas</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ padding: '10px', background: '#FCEBEB', borderRadius: '8px', fontSize: '12px', color: '#A32D2D' }}>
-          ⚠️ Esta ação não pode ser desfeita.
-        </div>
-      </Modal>
-
-      {/* Modal adicionar item */}
-      <Modal open={modalItem} onClose={() => setModalItem(false)} title="Adicionar item" size="sm"
-        footer={<><button className="btn btn-sm" onClick={() => setModalItem(false)}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={adicionarItem} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Adicionar'}</button></>}>
-        <div className="input-group">
-          <label className="input-label">Categoria</label>
-          <select className="input" value={filtroCategoria} onChange={(e) => { setFiltroCategoria(e.target.value); setNovoItem(f => ({ ...f, nome: '', unidade: 'kg' })) }}>
-            <option value="">Todas</option>
-            {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </div>
-        <div className="input-group">
-          <label className="input-label">Produto *</label>
-          <select className="input" value={novoItem.nome} onChange={(e) => {
-            const ing = ingredientes.find(i => i.nome === e.target.value)
-            setNovoItem(f => ({ ...f, nome: e.target.value, unidade: ing?.unidade ?? f.unidade, categoria: (ing?.categoria ?? f.categoria) as CategoriaAlimento }))
-          }}>
-            <option value="">Selecione...</option>
-            {ingredientes.filter(i => !filtroCategoria || i.categoria === filtroCategoria).map(ing => (
-              <option key={ing.nome} value={ing.nome}>{ing.nome}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div className="input-group">
-            <label className="input-label">Quantidade</label>
-            <input className="input" type="number" min={0} value={novoItem.quantidade} onChange={(e) => setNovoItem(f => ({ ...f, quantidade: e.target.value }))} placeholder="0" />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Unidade</label>
-            <input className="input" value={novoItem.unidade} readOnly style={{ background: '#F8F6F2', color: '#888780' }} />
+              <button
+                onClick={gerarLista}
+                disabled={gerandoLista}
+                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
+              >
+                {gerandoLista ? 'Gerando...' : 'Gerar'}
+              </button>
+            </div>
           </div>
         </div>
-      </Modal>
+      )}
 
-      {/* Modal preço */}
-      <Modal open={modalPreco.open} onClose={() => setModalPreco({ open: false })} title={`Registrar compra — ${modalPreco.item?.nome_item}`} size="sm"
-        footer={<><button className="btn btn-sm" onClick={() => setModalPreco({ open: false })}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={salvarPrecoECompra} disabled={salvando}>{salvando ? 'Salvando...' : '✓ Registrar'}</button></>}>
-        <div style={{ padding: '10px', background: '#E1F5EE', borderRadius: '8px', marginBottom: '14px', fontSize: '13px', color: '#085041' }}>
-          Quantidade: <strong>{modalPreco.item?.quantidade_comprar} {modalPreco.item?.unidade}</strong>
-        </div>
-        <div className="input-group">
-          <label className="input-label">Preço por unidade (R$)</label>
-          <input className="input" type="number" min={0} step={0.01} value={precoItem.preco} onChange={(e) => setPrecoItem(f => ({ ...f, preco: e.target.value }))} placeholder="0,00" />
-        </div>
-        <div className="input-group">
-          <label className="input-label">Fornecedor (opcional)</label>
-          <input className="input" value={precoItem.fornecedor} onChange={(e) => setPrecoItem(f => ({ ...f, fornecedor: e.target.value }))} placeholder="Ex: Atacadão..." />
-        </div>
-        {precoItem.preco && (
-          <div style={{ padding: '10px', background: '#FAEEDA', borderRadius: '8px', fontSize: '13px', color: '#412402' }}>
-            Total: <strong>{formatBRL(parseFloat(precoItem.preco) * (modalPreco.item?.quantidade_comprar ?? 0))}</strong>
+      {/* Modal Registrar Preço */}
+      {modalPreco && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-bold mb-1 text-gray-800">Registrar Compra</h2>
+            <p className="text-gray-600 text-sm mb-4">
+              {modalPreco.nome_item} — {modalPreco.quantidade_comprar} {modalPreco.unidade}
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Preço unitário (R$) <span className="text-gray-400 font-normal">— opcional</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={precoInput}
+              onChange={e => setPrecoInput(e.target.value)}
+              placeholder="0,00"
+              className="w-full border border-gray-300 rounded px-3 py-2 mb-4 text-sm"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setModalPreco(null)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarCompra}
+                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-medium"
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
-        )}
-      </Modal>
-    </div>
-  )
-}
-
-function TabelaItens({ itens, isAdmin, onMarcar, onExcluir }: {
-  itens: CompraItem[], isAdmin: boolean,
-  onMarcar: (item: CompraItem) => void, onExcluir: (id: string) => void
-}) {
-  return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      <div className="table-wrapper">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Produto</th>
-              <th>Qtd</th>
-              <th>Un</th>
-              {isAdmin && <th>Preço/un</th>}
-              {isAdmin && <th>Total</th>}
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {itens.map(item => (
-              <tr key={item.id}>
-                <td><strong>{item.nome_item}</strong></td>
-                <td style={{ color: '#BA7517', fontWeight: 500 }}>{item.quantidade_comprar}</td>
-                <td style={{ color: '#888780' }}>{item.unidade}</td>
-                {isAdmin && <td>{item.preco_unitario ? formatBRL(item.preco_unitario) : '—'}</td>}
-                {isAdmin && <td><strong>{item.total_estimado ? formatBRL(item.total_estimado) : '—'}</strong></td>}
-                <td>
-                  <Badge variant={item.status === 'recebido' ? 'green' : item.status === 'aprovado' ? 'blue' : 'amber'}>
-                    {item.status === 'recebido' ? 'Recebido' : item.status === 'aprovado' ? 'Aprovado' : 'Pendente'}
-                  </Badge>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    {item.status !== 'recebido' && (
-                      <button className="btn btn-sm btn-primary" style={{ fontSize: '11px', padding: '4px 8px' }} onClick={() => onMarcar(item)}>
-                        <Check size={11} /> {isAdmin ? 'Comprado' : 'Recebido'}
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button className="btn btn-sm btn-icon" style={{ color: '#A32D2D' }} onClick={() => onExcluir(item.id)}>
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        </div>
+      )}
     </div>
   )
 }
