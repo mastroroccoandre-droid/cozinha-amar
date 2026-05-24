@@ -185,11 +185,12 @@ export default function ComprasPage() {
         categoria: string
         unidade: string
         produto_id: string | null
+        quantidadeNecessaria: number
+        quantidadeEstoque: number
         quantidade: number
       }> = {}
 
       for (const ing of ingredientes || []) {
-        // Descobrir semana e dia_semana da preparação
         const prep = prepsFiltradas.find(p => p.id === ing.preparacao_id)
         if (!prep) continue
 
@@ -211,31 +212,36 @@ export default function ComprasPage() {
             categoria: ing.categoria,
             unidade: ing.unidade,
             produto_id: ing.produto_id || null,
+            quantidadeNecessaria: 0,
+            quantidadeEstoque: 0,
             quantidade: 0,
           }
         }
+        totais[chaveIng].quantidadeNecessaria += qtdTotal
         totais[chaveIng].quantidade += qtdTotal
       }
 
-      // 7. Descontar estoque se solicitado
-      if (descontarEstoque) {
-        const { data: produtos } = await supabase
-          .from('produtos')
-          .select('id, nome, quantidade_atual, unidade')
+      // 7. Buscar estoque atual para todos os itens (para registrar quantidade_estoque)
+      const { data: produtos } = await supabase
+        .from('produtos')
+        .select('id, nome, quantidade_atual, unidade')
 
-        for (const chave of Object.keys(totais)) {
-          const item = totais[chave]
-          const produto = (produtos || []).find(
-            p => p.nome.toLowerCase() === item.nome.toLowerCase() ||
-                 p.id === item.produto_id
-          )
-          if (produto) {
-            // Converter unidades se necessário
-            let estoqueConvertido = produto.quantidade_atual
-            if (item.unidade === 'g' && produto.unidade === 'kg') estoqueConvertido *= 1000
-            if (item.unidade === 'kg' && produto.unidade === 'g') estoqueConvertido /= 1000
-            if (item.unidade === 'ml' && produto.unidade === 'L') estoqueConvertido *= 1000
-            if (item.unidade === 'L' && produto.unidade === 'ml') estoqueConvertido /= 1000
+      for (const chave of Object.keys(totais)) {
+        const item = totais[chave]
+        const produto = (produtos || []).find(
+          p => p.nome.toLowerCase() === item.nome.toLowerCase() ||
+               p.id === item.produto_id
+        )
+        if (produto) {
+          let estoqueConvertido = produto.quantidade_atual
+          if (item.unidade === 'g' && produto.unidade === 'kg') estoqueConvertido *= 1000
+          if (item.unidade === 'kg' && produto.unidade === 'g') estoqueConvertido /= 1000
+          if (item.unidade === 'ml' && produto.unidade === 'L') estoqueConvertido *= 1000
+          if (item.unidade === 'L' && produto.unidade === 'ml') estoqueConvertido /= 1000
+          item.quantidadeEstoque = estoqueConvertido
+
+          // Descontar estoque se solicitado
+          if (descontarEstoque) {
             item.quantidade = Math.max(0, item.quantidade - estoqueConvertido)
           }
         }
@@ -256,7 +262,7 @@ export default function ComprasPage() {
 
       const { data: novaLista, error: erroLista } = await supabase
         .from('listas_compra')
-        .insert({ titulo, tipo: 'mensal', status: 'pendente', total_estimado: null })
+        .insert({ titulo, tipo: 'mensal', status: 'aberta', total_estimado: null })
         .select()
         .single()
 
@@ -272,11 +278,12 @@ export default function ComprasPage() {
         produto_id: i.produto_id,
         nome_item: i.nome,
         categoria: i.categoria,
+        quantidade_necessaria: Math.round(i.quantidadeNecessaria * 100) / 100,
+        quantidade_estoque: Math.round(i.quantidadeEstoque * 100) / 100,
         quantidade_comprar: Math.round(i.quantidade * 100) / 100,
         unidade: i.unidade,
         preco_unitario: null,
         total_estimado: null,
-        status: 'pendente',
       }))
 
       await supabase.from('compra_itens').insert(itensParaInserir)
