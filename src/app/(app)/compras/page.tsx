@@ -269,7 +269,7 @@ export default function ComprasPage() {
 
       const { data: novaLista, error: erroLista } = await supabase
         .from('listas_compra')
-        .insert({ titulo, tipo: 'mensal', status: 'aberta', total_estimado: null })
+        .insert({ titulo, tipo: 'mensal', status: 'pendente', total_estimado: null })
         .select()
         .single()
 
