@@ -71,6 +71,8 @@ export default function ComprasPage() {
   const [modalPreco, setModalPreco] = useState<CompraItem | null>(null)
   const [precoInput, setPrecoInput] = useState('')
   const [emailUsuario, setEmailUsuario] = useState<string>('')
+  const [quantidades, setQuantidades] = useState<Record<string, number>>({})
+  const [salvandoItem, setSalvandoItem] = useState<string | null>(null)
 
   useEffect(() => {
     getSupabase().auth.getUser().then(({ data }) => {
@@ -118,6 +120,29 @@ export default function ComprasPage() {
       .order('categoria')
       .order('nome_item')
     setItens(data || [])
+    // Inicializa quantidades editáveis
+    const qtds: Record<string, number> = {}
+    ;(data || []).forEach((i: CompraItem) => { qtds[i.id] = i.quantidade_comprar })
+    setQuantidades(qtds)
+  }
+
+  function alterarQuantidade(id: string, delta: number) {
+    setQuantidades(prev => ({
+      ...prev,
+      [id]: Math.max(0, (prev[id] ?? 0) + delta)
+    }))
+  }
+
+  async function salvarQuantidade(item: CompraItem) {
+    const novaQtd = quantidades[item.id] ?? item.quantidade_comprar
+    if (novaQtd === item.quantidade_comprar) return
+    setSalvandoItem(item.id)
+    await supabase
+      .from('compra_itens')
+      .update({ quantidade_comprar: novaQtd })
+      .eq('id', item.id)
+    setItens(prev => prev.map(i => i.id === item.id ? { ...i, quantidade_comprar: novaQtd } : i))
+    setSalvandoItem(null)
   }
 
   function toggleSemana(s: number) {
@@ -532,10 +557,32 @@ export default function ComprasPage() {
                           <td className={`px-4 py-2 ${item.status === 'comprado' ? 'line-through text-gray-400' : ''}`}>
                             {item.nome_item}
                           </td>
-                          <td className="px-4 py-2 text-right font-mono">
-                            {item.quantidade_comprar % 1 === 0
-                              ? item.quantidade_comprar
-                              : item.quantidade_comprar.toFixed(2)}
+                          <td className="px-2 py-2">
+                            {item.status !== 'comprado' ? (
+                              <div className="flex items-center gap-1 justify-end">
+                                <button
+                                  onClick={() => alterarQuantidade(item.id, -0.5)}
+                                  className="w-6 h-6 rounded border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:border-green-500 text-xs"
+                                >−</button>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.5}
+                                  value={quantidades[item.id] ?? item.quantidade_comprar}
+                                  onChange={e => setQuantidades(prev => ({ ...prev, [item.id]: parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 text-right border rounded px-1 py-0.5 text-sm font-mono"
+                                  style={{ borderColor: (quantidades[item.id] ?? item.quantidade_comprar) !== item.quantidade_comprar ? '#7B9E6B' : '#E5E3DC' }}
+                                />
+                                <button
+                                  onClick={() => alterarQuantidade(item.id, 0.5)}
+                                  className="w-6 h-6 rounded border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:border-green-500 text-xs"
+                                >+</button>
+                              </div>
+                            ) : (
+                              <span className="text-right block font-mono text-gray-400">
+                                {item.quantidade_comprar % 1 === 0 ? item.quantidade_comprar : item.quantidade_comprar.toFixed(2)}
+                              </span>
+                            )}
                           </td>
                           <td className="px-2 py-2 text-gray-500">{item.unidade}</td>
                           {!isCozinha && (
@@ -551,6 +598,14 @@ export default function ComprasPage() {
                           <td className="px-4 py-2 text-center">
                             {item.status === 'comprado' ? (
                               <span className="text-green-600 text-xs font-medium">✓ Comprado</span>
+                            ) : (quantidades[item.id] ?? item.quantidade_comprar) !== item.quantidade_comprar ? (
+                              <button
+                                onClick={() => salvarQuantidade(item)}
+                                disabled={salvandoItem === item.id}
+                                className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 mr-1"
+                              >
+                                {salvandoItem === item.id ? '...' : '✓ Salvar'}
+                              </button>
                             ) : (
                               <button
                                 onClick={() => marcarComprado(item)}
