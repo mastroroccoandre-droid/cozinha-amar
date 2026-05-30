@@ -237,34 +237,16 @@ export default function ComprasPage() {
         let qtd = ing.quantidade_por_idoso * vezes
         let unidade = ing.unidade
 
+        // Converte SEMPRE para a unidade base na leitura (g→kg, ml→L),
+        // independente da ordem dos registros. Assim a soma nunca mistura unidades.
+        if (unidade === 'g') { qtd /= 1000; unidade = 'kg' }
+        if (unidade === 'ml') { qtd /= 1000; unidade = 'L' }
+
         // Normaliza nome para evitar duplicatas por acento (ex: "Moída" vs "Moida")
         const chaveIng = ing.nome_ingrediente.toLowerCase()
           .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
-        // Se já existe o item com unidade diferente, converte para a unidade base (kg ou L)
-        if (totais[chaveIng]) {
-          const unidadeExistente = totais[chaveIng].unidade
-          // Converter g → kg
-          if (unidade === 'g' && unidadeExistente === 'kg') { qtd /= 1000; unidade = 'kg' }
-          if (unidade === 'kg' && unidadeExistente === 'g') {
-            totais[chaveIng].quantidade *= 1000 / 1000  // já existente em g → kg
-            totais[chaveIng].quantidadeNecessaria = totais[chaveIng].quantidade
-            totais[chaveIng].unidade = 'kg'
-            unidade = 'kg'
-          }
-          // Converter ml → L
-          if (unidade === 'ml' && unidadeExistente === 'L') { qtd /= 1000; unidade = 'L' }
-          if (unidade === 'L' && unidadeExistente === 'ml') {
-            totais[chaveIng].quantidade /= 1000
-            totais[chaveIng].quantidadeNecessaria = totais[chaveIng].quantidade
-            totais[chaveIng].unidade = 'L'
-            unidade = 'L'
-          }
-        } else {
-          // Primeiro registro: se está em g, converte para kg; se ml, para L
-          if (unidade === 'g') { qtd /= 1000; unidade = 'kg' }
-          if (unidade === 'ml') { qtd /= 1000; unidade = 'L' }
-
+        if (!totais[chaveIng]) {
           totais[chaveIng] = {
             nome: ing.nome_ingrediente,
             categoria: ing.categoria,
@@ -376,17 +358,33 @@ export default function ComprasPage() {
       .update({ status: 'comprado', preco_unitario: preco || null, total_estimado: total || null })
       .eq('id', modalPreco.id)
 
-    // Registrar entrada no estoque se tiver produto vinculado
-    if (modalPreco.produto_id) {
-      const { data: prod } = await supabase
+    // Registrar entrada no estoque — busca produto por id OU por nome
+    let produtoId = modalPreco.produto_id
+    let prod: { quantidade_atual: number; unidade: string } | null = null
+
+    if (produtoId) {
+      const { data } = await supabase
         .from('produtos')
         .select('quantidade_atual, unidade')
-        .eq('id', modalPreco.produto_id)
+        .eq('id', produtoId)
         .single()
+      prod = data
+    } else {
+      // Sem vínculo: tenta achar produto pelo nome normalizado
+      const { data: prods } = await supabase
+        .from('produtos')
+        .select('id, nome, quantidade_atual, unidade')
+      const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const encontrado = (prods || []).find(p => norm(p.nome) === norm(modalPreco.nome_item))
+      if (encontrado) {
+        produtoId = encontrado.id
+        prod = { quantidade_atual: encontrado.quantidade_atual, unidade: encontrado.unidade }
+      }
+    }
 
-      if (prod) {
+    if (produtoId && prod) {
+      {
         let qtdEntrada = modalPreco.quantidade_comprar
-        // Converter se necessário (item em g, produto em kg)
         if (modalPreco.unidade === 'g' && prod.unidade === 'kg') qtdEntrada /= 1000
         if (modalPreco.unidade === 'kg' && prod.unidade === 'g') qtdEntrada *= 1000
         if (modalPreco.unidade === 'ml' && prod.unidade === 'L') qtdEntrada /= 1000
@@ -397,10 +395,10 @@ export default function ComprasPage() {
         await supabase
           .from('produtos')
           .update({ quantidade_atual: nova })
-          .eq('id', modalPreco.produto_id)
+          .eq('id', produtoId)
 
         await supabase.from('movimentacoes_estoque').insert({
-          produto_id: modalPreco.produto_id,
+          produto_id: produtoId,
           tipo: 'entrada',
           quantidade: qtdEntrada,
           quantidade_anterior: prod.quantidade_atual,
@@ -408,6 +406,8 @@ export default function ComprasPage() {
           motivo: `Compra — ${listaSelecionada?.titulo || ''}`,
         })
       }
+    } else {
+      alert(`"${modalPreco.nome_item}" foi marcado como comprado, mas não está vinculado a nenhum produto do estoque — a entrada não foi registrada no controle de estoque.`)
     }
 
     setModalPreco(null)
@@ -512,18 +512,22 @@ export default function ComprasPage() {
                   <option key={c} value={c}>{CATEGORIA_LABELS[c]}</option>
                 ))}
               </select>
-              <button
-                onClick={() => limparLista(filtroCategoria !== 'todas' ? filtroCategoria : undefined)}
-                className="text-sm text-red-600 hover:underline px-2"
-              >
-                Limpar{filtroCategoria !== 'todas' ? ` ${CATEGORIA_LABELS[filtroCategoria]}` : ' tudo'}
-              </button>
-              <button
-                onClick={excluirLista}
-                className="text-sm text-red-800 hover:underline px-2"
-              >
-                Excluir lista
-              </button>
+              {!isCozinha && (
+                <button
+                  onClick={() => limparLista(filtroCategoria !== 'todas' ? filtroCategoria : undefined)}
+                  className="text-sm text-red-600 hover:underline px-2"
+                >
+                  Limpar{filtroCategoria !== 'todas' ? ` ${CATEGORIA_LABELS[filtroCategoria]}` : ' tudo'}
+                </button>
+              )}
+              {!isCozinha && (
+                <button
+                  onClick={excluirLista}
+                  className="text-sm text-red-800 hover:underline px-2"
+                >
+                  Excluir lista
+                </button>
+              )}
             </div>
           </div>
 
@@ -536,8 +540,8 @@ export default function ComprasPage() {
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2 border-b pb-1">
                   {CATEGORIA_LABELS[cat]}
                 </h2>
-                <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="bg-white rounded-lg shadow-sm overflow-x-auto">
+                  <table className="w-full text-sm" style={{ minWidth: '420px' }}>
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="text-left px-4 py-2 text-gray-600">Item</th>
