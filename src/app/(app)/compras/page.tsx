@@ -40,7 +40,8 @@ const CATEGORIA_LABELS: Record<string, string> = {
 function getSemanaDoMes(data: Date): number {
   const primeiroDia = new Date(data.getFullYear(), data.getMonth(), 1)
   const diaDaSemana = primeiroDia.getDay()
-  return Math.min(5, Math.ceil((data.getDate() + diaDaSemana) / 7))
+  // Semana real do calendário (pode chegar a 6 em alguns meses)
+  return Math.ceil((data.getDate() + diaDaSemana) / 7)
 }
 
 // Mapeia todos os dias de um mês para { semana, dia_semana }
@@ -49,8 +50,10 @@ function mapearDiasDoMes(ano: number, mes: number): { semana: number; dia_semana
   const totalDias = new Date(ano, mes + 1, 0).getDate()
   for (let d = 1; d <= totalDias; d++) {
     const data = new Date(ano, mes, d)
-    const semana = getSemanaDoMes(data)
-    const dia_semana = data.getDay() === 0 ? 0 : data.getDay() // 0=Dom...6=Sáb (getDay já é 0=Dom)
+    let semana = getSemanaDoMes(data)
+    // O cardápio só tem 5 semanas. A 6ª linha do calendário usa a Semana 1
+    // (não repete a semana anterior).
+    if (semana > 5) semana = 1
     // No sistema: 0=Segunda, 1=Terça, 2=Quarta, 3=Quinta, 4=Sexta, 5=Sábado, 6=Domingo
     // getDay(): 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
     const diaSistema = data.getDay() === 0 ? 6 : data.getDay() - 1
