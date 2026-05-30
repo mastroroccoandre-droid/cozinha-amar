@@ -136,12 +136,37 @@ export default function ComprasPage() {
   async function salvarQuantidade(item: CompraItem) {
     const novaQtd = quantidades[item.id] ?? item.quantidade_comprar
     if (novaQtd === item.quantidade_comprar) return
+
+    // Se zerou, confirma antes de remover da lista
+    if (novaQtd === 0) {
+      const ok = confirm(`"${item.nome_item}" será removido da lista de compras (quantidade zerada). Tem certeza que deseja realizar essa mudança?`)
+      if (!ok) {
+        // Desfaz: volta ao valor original
+        setQuantidades(prev => ({ ...prev, [item.id]: item.quantidade_comprar }))
+        return
+      }
+      setSalvandoItem(item.id)
+      await supabase.from('compra_itens').delete().eq('id', item.id)
+      setItens(prev => prev.filter(i => i.id !== item.id))
+      setSalvandoItem(null)
+      return
+    }
+
     setSalvandoItem(item.id)
     await supabase
       .from('compra_itens')
       .update({ quantidade_comprar: novaQtd })
       .eq('id', item.id)
     setItens(prev => prev.map(i => i.id === item.id ? { ...i, quantidade_comprar: novaQtd } : i))
+    setSalvandoItem(null)
+  }
+
+  async function excluirItem(item: CompraItem) {
+    const ok = confirm(`Remover "${item.nome_item}" da lista?`)
+    if (!ok) return
+    setSalvandoItem(item.id)
+    await supabase.from('compra_itens').delete().eq('id', item.id)
+    setItens(prev => prev.filter(i => i.id !== item.id))
     setSalvandoItem(null)
   }
 
@@ -550,6 +575,7 @@ export default function ComprasPage() {
                         {!isCozinha && <th className="text-right px-4 py-2 text-gray-600">Preço unit.</th>}
                         {!isCozinha && <th className="text-right px-4 py-2 text-gray-600">Total</th>}
                         <th className="px-4 py-2"></th>
+                        <th className="px-2 py-2"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -618,6 +644,14 @@ export default function ComprasPage() {
                                 Marcar comprado
                               </button>
                             )}
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <button
+                              onClick={() => excluirItem(item)}
+                              disabled={salvandoItem === item.id}
+                              title="Remover item da lista"
+                              className="text-gray-400 hover:text-red-600 text-lg leading-none"
+                            >×</button>
                           </td>
                         </tr>
                       ))}
