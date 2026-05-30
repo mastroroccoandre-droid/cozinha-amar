@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, Minus, Package, Search, AlertTriangle } from 'lucide-react'
+import { Plus, Minus, Package, Search, AlertTriangle, Truck } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import { Modal, Badge, MetricCard } from '@/components/ui'
 import toast from 'react-hot-toast'
@@ -36,6 +36,21 @@ const FORM_INICIAL: ProdutoForm = {
   observacoes: '',
 }
 
+interface ItemRecebimento {
+  id: string
+  lista_id: string
+  lista_titulo: string
+  nome_item: string
+  produto_id: string | null
+  quantidade_comprar: number
+  unidade: string
+  // Estado de edição do recebimento
+  recebido: number
+  motivo: string
+}
+
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
 export default function EstoquePage() {
   const [produtos, setProdutos] = useState<Produto[]>([])
   const [quantidades, setQuantidades] = useState<Record<string, number>>({})
@@ -47,19 +62,52 @@ export default function EstoquePage() {
   const [salvando, setSalvando] = useState<string | null>(null)
   const [salvandoNovo, setSalvandoNovo] = useState(false)
 
+  // Recebimentos pendentes
+  const [recebimentos, setRecebimentos] = useState<ItemRecebimento[]>([])
+  const [confirmandoReceb, setConfirmandoReceb] = useState<string | null>(null)
+  const [emailUsuario, setEmailUsuario] = useState<string>('')
+
+  useEffect(() => {
+    getSupabase().auth.getUser().then(({ data }) => setEmailUsuario(data.user?.email ?? ''))
+  }, [])
+
   async function carregar() {
     const supabase = getSupabase()
     const { data } = await supabase.from('produtos').select('*').eq('ativo', true).order('nome')
     const prods = data ?? []
     setProdutos(prods)
-    // Inicializa quantidades com os valores atuais
     const qtds: Record<string, number> = {}
     prods.forEach((p: Produto) => { qtds[p.id] = p.quantidade_atual })
     setQuantidades(qtds)
     setLoading(false)
   }
 
-  useEffect(() => { carregar() }, [])
+  async function carregarRecebimentos() {
+    const supabase = getSupabase()
+    // Itens comprados (status 'aprovado') aguardando recebimento
+    const { data } = await supabase
+      .from('compra_itens')
+      .select('*, listas_compra(titulo)')
+      .eq('status', 'aprovado')
+      .order('nome_item')
+    const itens: ItemRecebimento[] = (data ?? []).map((i: any) => ({
+      id: i.id,
+      lista_id: i.lista_id,
+      lista_titulo: i.listas_compra?.titulo ?? '',
+      nome_item: i.nome_item,
+      produto_id: i.produto_id,
+      quantidade_comprar: i.quantidade_comprar,
+      unidade: i.unidade,
+      recebido: i.quantidade_comprar, // default: recebeu o que pediu
+      motivo: '',
+    }))
+    setRecebimentos(itens)
+  }
+
+  useEffect(() => {
+    carregar()
+    carregarRecebimentos()
+  }, [])
 
   const filtrados = useMemo(() => {
     return produtos.filter((p) => {
@@ -104,6 +152,95 @@ export default function EstoquePage() {
     carregar()
   }
 
+  // Atualiza campo editável de um recebimento
+  function updateRecebimento(id: string, campo: 'recebido' | 'motivo', valor: number | string) {
+    setRecebimentos(prev => prev.map(r => r.id === id ? { ...r, [campo]: valor } : r))
+  }
+
+  async function confirmarRecebimento(item: ItemRecebimento) {
+    const divergencia = item.recebido !== item.quantidade_comprar
+
+    if (divergencia && !item.motivo.trim()) {
+      toast.error('Informe o motivo da divergência')
+      return
+    }
+    if (item.recebido < 0) {
+      toast.error('Quantidade inválida')
+      return
+    }
+
+    setConfirmandoReceb(item.id)
+    const supabase = getSupabase()
+
+    // 1. Localiza o produto no estoque (por id ou por nome)
+    let produtoId = item.produto_id
+    let prod: { quantidade_atual: number; unidade: string } | null = null
+
+    if (produtoId) {
+      const { data } = await supabase.from('produtos').select('quantidade_atual, unidade').eq('id', produtoId).single()
+      prod = data
+    } else {
+      const { data: prods } = await supabase.from('produtos').select('id, nome, quantidade_atual, unidade')
+      const encontrado = (prods || []).find((p: any) => norm(p.nome) === norm(item.nome_item))
+      if (encontrado) {
+        produtoId = encontrado.id
+        prod = { quantidade_atual: encontrado.quantidade_atual, unidade: encontrado.unidade }
+      }
+    }
+
+    // 2. Dá entrada no estoque (se achou o produto) com a quantidade RECEBIDA
+    if (produtoId && prod) {
+      let qtdEntrada = item.recebido
+      if (item.unidade === 'g' && prod.unidade === 'kg') qtdEntrada /= 1000
+      if (item.unidade === 'kg' && prod.unidade === 'g') qtdEntrada *= 1000
+      if (item.unidade === 'ml' && prod.unidade === 'L') qtdEntrada /= 1000
+      if (item.unidade === 'L' && prod.unidade === 'ml') qtdEntrada *= 1000
+
+      const nova = (prod.quantidade_atual || 0) + qtdEntrada
+      await supabase.from('produtos').update({ quantidade_atual: nova }).eq('id', produtoId)
+      await supabase.from('movimentacoes_estoque').insert({
+        produto_id: produtoId,
+        tipo: 'entrada',
+        quantidade: qtdEntrada,
+        quantidade_anterior: prod.quantidade_atual,
+        quantidade_posterior: nova,
+        motivo: `Recebimento — ${item.lista_titulo}`,
+      })
+    }
+
+    // 3. Registra o recebimento (com divergência se houver)
+    await supabase.from('recebimentos').insert({
+      compra_item_id: item.id,
+      lista_id: item.lista_id,
+      lista_titulo: item.lista_titulo,
+      nome_item: item.nome_item,
+      quantidade_pedida: item.quantidade_comprar,
+      quantidade_recebida: item.recebido,
+      unidade: item.unidade,
+      divergencia,
+      motivo_divergencia: divergencia ? item.motivo : null,
+      produto_id: produtoId,
+      usuario_email: emailUsuario || 'desconhecido',
+    })
+
+    // 4. Marca o item da compra como recebido
+    await supabase.from('compra_itens').update({ status: 'recebido' }).eq('id', item.id)
+
+    toast.success(
+      divergencia
+        ? `${item.nome_item} recebido com divergência registrada`
+        : `${item.nome_item} recebido e adicionado ao estoque`
+    )
+
+    setConfirmandoReceb(null)
+    setRecebimentos(prev => prev.filter(r => r.id !== item.id))
+    carregar()
+
+    if (!produtoId) {
+      toast(`"${item.nome_item}" não está vinculado a um produto do estoque — o recebimento foi registrado, mas não somou ao estoque.`, { icon: '⚠️', duration: 6000 })
+    }
+  }
+
   async function salvarProduto() {
     if (!form.nome.trim()) return toast.error('Informe o nome do produto')
     setSalvandoNovo(true)
@@ -125,6 +262,90 @@ export default function EstoquePage() {
 
   return (
     <div>
+      {/* Recebimentos pendentes */}
+      {recebimentos.length > 0 && (
+        <div className="card" style={{ marginBottom: '20px', border: '1px solid #BA7517', background: '#FDF6EC' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <Truck size={18} style={{ color: '#BA7517' }} />
+            <span style={{ fontSize: '15px', fontWeight: 600, color: '#7A4D0E' }}>
+              Recebimentos pendentes ({recebimentos.length})
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: '#9A6518', marginBottom: '14px' }}>
+            Confira a quantidade recebida. Se for diferente da pedida, informe o motivo para registro.
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '600px' }}>
+              <thead>
+                <tr style={{ background: '#F6EAD7' }}>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#7A4D0E', textTransform: 'uppercase' }}>Item</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '11px', fontWeight: 600, color: '#7A4D0E', textTransform: 'uppercase' }}>Pedido</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'center', fontSize: '11px', fontWeight: 600, color: '#7A4D0E', textTransform: 'uppercase' }}>Recebido</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#7A4D0E', textTransform: 'uppercase' }}>Motivo (se divergente)</th>
+                  <th style={{ padding: '8px 10px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {recebimentos.map((item) => {
+                  const divergente = item.recebido !== item.quantidade_comprar
+                  return (
+                    <tr key={item.id} style={{ borderBottom: '1px solid #EADBC2' }}>
+                      <td style={{ padding: '8px 10px', fontWeight: 500 }}>
+                        {item.nome_item}
+                        <div style={{ fontSize: '10px', color: '#9A6518' }}>{item.lista_titulo}</div>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: '#5F5E5A' }}>
+                        {item.quantidade_comprar} {item.unidade}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            step={item.unidade === 'kg' || item.unidade === 'L' ? 0.5 : 1}
+                            value={item.recebido}
+                            onChange={(e) => updateRecebimento(item.id, 'recebido', parseFloat(e.target.value) || 0)}
+                            style={{
+                              width: '70px', padding: '4px 6px', textAlign: 'right', borderRadius: '6px',
+                              border: `1px solid ${divergente ? '#BA7517' : '#E5E3DC'}`,
+                              background: divergente ? '#FBEFD9' : '#fff',
+                              fontWeight: divergente ? 600 : 400, fontSize: '13px',
+                            }}
+                          />
+                          <span style={{ fontSize: '12px', color: '#888780' }}>{item.unidade}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {divergente ? (
+                          <input
+                            type="text"
+                            value={item.motivo}
+                            onChange={(e) => updateRecebimento(item.id, 'motivo', e.target.value)}
+                            placeholder="Ex: fornecedor enviou a menos"
+                            style={{ width: '100%', minWidth: '180px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #BA7517', fontSize: '12px' }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#1D9E75' }}>✓ Conforme pedido</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={() => confirmarRecebimento(item)}
+                          disabled={confirmandoReceb === item.id}
+                        >
+                          {confirmandoReceb === item.id ? '...' : '✓ Confirmar'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Métricas */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '20px' }}>
         <MetricCard label="Total de produtos" value={stats.total} icon={<Package size={13} />} />

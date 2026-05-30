@@ -142,6 +142,7 @@ export default function ComprasPage() {
       .from('compra_itens')
       .select('*')
       .eq('lista_id', listaId)
+      .eq('status', 'pendente')
       .order('categoria')
       .order('nome_item')
     setItens(data || [])
@@ -420,62 +421,13 @@ export default function ComprasPage() {
 
     await registrarLog({ item: modalPreco, acao: 'marcado como comprado', quantidadeAnterior: modalPreco.quantidade_comprar, quantidadeNova: modalPreco.quantidade_comprar })
 
+    // Marca como 'aprovado' (= comprado, aguardando recebimento).
+    // A entrada no estoque acontece só quando a cozinheira confirmar o
+    // recebimento na tela de Estoque.
     await supabase
       .from('compra_itens')
-      .update({ status: 'comprado', preco_unitario: preco || null, total_estimado: total || null })
+      .update({ status: 'aprovado', preco_unitario: preco || null, total_estimado: total || null })
       .eq('id', modalPreco.id)
-
-    // Registrar entrada no estoque — busca produto por id OU por nome
-    let produtoId = modalPreco.produto_id
-    let prod: { quantidade_atual: number; unidade: string } | null = null
-
-    if (produtoId) {
-      const { data } = await supabase
-        .from('produtos')
-        .select('quantidade_atual, unidade')
-        .eq('id', produtoId)
-        .single()
-      prod = data
-    } else {
-      // Sem vínculo: tenta achar produto pelo nome normalizado
-      const { data: prods } = await supabase
-        .from('produtos')
-        .select('id, nome, quantidade_atual, unidade')
-      const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      const encontrado = (prods || []).find(p => norm(p.nome) === norm(modalPreco.nome_item))
-      if (encontrado) {
-        produtoId = encontrado.id
-        prod = { quantidade_atual: encontrado.quantidade_atual, unidade: encontrado.unidade }
-      }
-    }
-
-    if (produtoId && prod) {
-      {
-        let qtdEntrada = modalPreco.quantidade_comprar
-        if (modalPreco.unidade === 'g' && prod.unidade === 'kg') qtdEntrada /= 1000
-        if (modalPreco.unidade === 'kg' && prod.unidade === 'g') qtdEntrada *= 1000
-        if (modalPreco.unidade === 'ml' && prod.unidade === 'L') qtdEntrada /= 1000
-        if (modalPreco.unidade === 'L' && prod.unidade === 'ml') qtdEntrada *= 1000
-
-        const nova = (prod.quantidade_atual || 0) + qtdEntrada
-
-        await supabase
-          .from('produtos')
-          .update({ quantidade_atual: nova })
-          .eq('id', produtoId)
-
-        await supabase.from('movimentacoes_estoque').insert({
-          produto_id: produtoId,
-          tipo: 'entrada',
-          quantidade: qtdEntrada,
-          quantidade_anterior: prod.quantidade_atual,
-          quantidade_posterior: nova,
-          motivo: `Compra — ${listaSelecionada?.titulo || ''}`,
-        })
-      }
-    } else {
-      alert(`"${modalPreco.nome_item}" foi marcado como comprado, mas não está vinculado a nenhum produto do estoque — a entrada não foi registrada no controle de estoque.`)
-    }
 
     setModalPreco(null)
     if (listaSelecionada) carregarItens(listaSelecionada.id)
