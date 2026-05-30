@@ -73,6 +73,9 @@ export default function ComprasPage() {
   const [emailUsuario, setEmailUsuario] = useState<string>('')
   const [quantidades, setQuantidades] = useState<Record<string, number>>({})
   const [salvandoItem, setSalvandoItem] = useState<string | null>(null)
+  const [modalHistorico, setModalHistorico] = useState(false)
+  const [logs, setLogs] = useState<any[]>([])
+  const [carregandoLogs, setCarregandoLogs] = useState(false)
 
   useEffect(() => {
     getSupabase().auth.getUser().then(({ data }) => {
@@ -82,6 +85,25 @@ export default function ComprasPage() {
 
   const isCozinha = EMAILS_COZINHA.includes(emailUsuario)
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
+
+  // Registra uma ação no log de auditoria
+  async function registrarLog(params: {
+    item: CompraItem
+    acao: string
+    quantidadeAnterior?: number | null
+    quantidadeNova?: number | null
+  }) {
+    await supabase.from('log_compras').insert({
+      lista_id: listaSelecionada?.id ?? null,
+      lista_titulo: listaSelecionada?.titulo ?? null,
+      nome_item: params.item.nome_item,
+      acao: params.acao,
+      quantidade_anterior: params.quantidadeAnterior ?? null,
+      quantidade_nova: params.quantidadeNova ?? null,
+      unidade: params.item.unidade,
+      usuario_email: emailUsuario || 'desconhecido',
+    })
+  }
 
   // Modal gerar lista
   const hoje = new Date()
@@ -146,6 +168,7 @@ export default function ComprasPage() {
         return
       }
       setSalvandoItem(item.id)
+      await registrarLog({ item, acao: 'removido (zerado)', quantidadeAnterior: item.quantidade_comprar, quantidadeNova: 0 })
       await supabase.from('compra_itens').delete().eq('id', item.id)
       setItens(prev => prev.filter(i => i.id !== item.id))
       setSalvandoItem(null)
@@ -153,6 +176,7 @@ export default function ComprasPage() {
     }
 
     setSalvandoItem(item.id)
+    await registrarLog({ item, acao: 'quantidade alterada', quantidadeAnterior: item.quantidade_comprar, quantidadeNova: novaQtd })
     await supabase
       .from('compra_itens')
       .update({ quantidade_comprar: novaQtd })
@@ -165,9 +189,22 @@ export default function ComprasPage() {
     const ok = confirm(`Remover "${item.nome_item}" da lista?`)
     if (!ok) return
     setSalvandoItem(item.id)
+    await registrarLog({ item, acao: 'item excluído', quantidadeAnterior: item.quantidade_comprar, quantidadeNova: null })
     await supabase.from('compra_itens').delete().eq('id', item.id)
     setItens(prev => prev.filter(i => i.id !== item.id))
     setSalvandoItem(null)
+  }
+
+  async function abrirHistorico() {
+    setModalHistorico(true)
+    setCarregandoLogs(true)
+    const { data } = await supabase
+      .from('log_compras')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200)
+    setLogs(data || [])
+    setCarregandoLogs(false)
   }
 
   function toggleSemana(s: number) {
@@ -378,6 +415,8 @@ export default function ComprasPage() {
     const preco = parseFloat(precoInput.replace(',', '.')) || 0
     const total = preco * modalPreco.quantidade_comprar
 
+    await registrarLog({ item: modalPreco, acao: 'marcado como comprado', quantidadeAnterior: modalPreco.quantidade_comprar, quantidadeNova: modalPreco.quantidade_comprar })
+
     await supabase
       .from('compra_itens')
       .update({ status: 'comprado', preco_unitario: preco || null, total_estimado: total || null })
@@ -487,12 +526,22 @@ export default function ComprasPage() {
       {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Lista de Compras</h1>
-        <button
-          onClick={() => setModalAberto(true)}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-medium"
-        >
-          + Gerar Lista
-        </button>
+        <div className="flex gap-2">
+          {!isCozinha && (
+            <button
+              onClick={abrirHistorico}
+              className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 font-medium"
+            >
+              Histórico
+            </button>
+          )}
+          <button
+            onClick={() => setModalAberto(true)}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-medium"
+          >
+            + Gerar Lista
+          </button>
+        </div>
       </div>
 
       {/* Seletor de listas existentes */}
@@ -822,6 +871,68 @@ export default function ComprasPage() {
               >
                 Confirmar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Histórico de Alterações (só admin) */}
+      {modalHistorico && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">Histórico de Alterações</h2>
+              <button
+                onClick={() => setModalHistorico(false)}
+                className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              >×</button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Registro de todas as alterações feitas nas listas de compras (últimas 200).
+            </p>
+            <div className="overflow-y-auto flex-1">
+              {carregandoLogs ? (
+                <div className="text-center py-12 text-gray-400">Carregando histórico...</div>
+              ) : logs.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">Nenhuma alteração registrada ainda.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-gray-600">Data/Hora</th>
+                      <th className="text-left px-3 py-2 text-gray-600">Item</th>
+                      <th className="text-left px-3 py-2 text-gray-600">Ação</th>
+                      <th className="text-right px-3 py-2 text-gray-600">De</th>
+                      <th className="text-right px-3 py-2 text-gray-600">Para</th>
+                      <th className="text-left px-3 py-2 text-gray-600">Por</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map(log => (
+                      <tr key={log.id} className="border-t">
+                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                          {new Date(log.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-3 py-2 font-medium">{log.nome_item}</td>
+                        <td className="px-3 py-2">
+                          <span className={
+                            log.acao.includes('removido') || log.acao.includes('excluído')
+                              ? 'text-red-600' : log.acao.includes('comprado')
+                              ? 'text-green-600' : 'text-amber-600'
+                          }>{log.acao}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-500">
+                          {log.quantidade_anterior != null ? `${log.quantidade_anterior} ${log.unidade || ''}` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">
+                          {log.quantidade_nova != null ? `${log.quantidade_nova} ${log.unidade || ''}` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">{log.usuario_email}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
