@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { Plus, Minus, Package, Search, AlertTriangle, Truck } from 'lucide-react'
 import { getSupabase } from '@/lib/supabase'
 import { Modal, Badge, MetricCard } from '@/components/ui'
@@ -41,6 +41,7 @@ interface ItemRecebimento {
   lista_id: string
   lista_titulo: string
   nome_item: string
+  categoria: string
   produto_id: string | null
   quantidade_comprar: number
   unidade: string
@@ -48,6 +49,16 @@ interface ItemRecebimento {
   recebido: number
   motivo: string
 }
+
+const CATEGORIA_LABELS: Record<string, string> = {
+  hortifruti: 'Hortifruti',
+  carnes: 'Carnes',
+  secos: 'Secos',
+  laticinios: 'Laticínios',
+  bebidas: 'Bebidas',
+  outros: 'Outros',
+}
+const ORDEM_CATEGORIAS = ['hortifruti', 'carnes', 'secos', 'laticinios', 'bebidas', 'outros']
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
@@ -95,6 +106,7 @@ export default function EstoquePage() {
       lista_id: i.lista_id,
       lista_titulo: i.listas_compra?.titulo ?? '',
       nome_item: i.nome_item,
+      categoria: i.categoria ?? 'outros',
       produto_id: i.produto_id,
       quantidade_comprar: i.quantidade_comprar,
       unidade: i.unidade,
@@ -286,58 +298,71 @@ export default function EstoquePage() {
                 </tr>
               </thead>
               <tbody>
-                {recebimentos.map((item) => {
-                  const divergente = item.recebido !== item.quantidade_comprar
+                {ORDEM_CATEGORIAS.map((cat) => {
+                  const grupo = recebimentos.filter(r => r.categoria === cat)
+                  if (grupo.length === 0) return null
                   return (
-                    <tr key={item.id} style={{ borderBottom: '1px solid #EADBC2' }}>
-                      <td style={{ padding: '8px 10px', fontWeight: 500 }}>
-                        {item.nome_item}
-                        <div style={{ fontSize: '10px', color: '#9A6518' }}>{item.lista_titulo}</div>
-                      </td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', color: '#5F5E5A' }}>
-                        {item.quantidade_comprar} {item.unidade}
-                      </td>
-                      <td style={{ padding: '8px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-                          <input
-                            type="number"
-                            min={0}
-                            step={item.unidade === 'kg' || item.unidade === 'L' ? 0.5 : 1}
-                            value={item.recebido}
-                            onChange={(e) => updateRecebimento(item.id, 'recebido', parseFloat(e.target.value) || 0)}
-                            style={{
-                              width: '70px', padding: '4px 6px', textAlign: 'right', borderRadius: '6px',
-                              border: `1px solid ${divergente ? '#BA7517' : '#E5E3DC'}`,
-                              background: divergente ? '#FBEFD9' : '#fff',
-                              fontWeight: divergente ? 600 : 400, fontSize: '13px',
-                            }}
-                          />
-                          <span style={{ fontSize: '12px', color: '#888780' }}>{item.unidade}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '8px 10px' }}>
-                        {divergente ? (
-                          <input
-                            type="text"
-                            value={item.motivo}
-                            onChange={(e) => updateRecebimento(item.id, 'motivo', e.target.value)}
-                            placeholder="Ex: fornecedor enviou a menos"
-                            style={{ width: '100%', minWidth: '180px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #BA7517', fontSize: '12px' }}
-                          />
-                        ) : (
-                          <span style={{ fontSize: '12px', color: '#1D9E75' }}>✓ Conforme pedido</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => confirmarRecebimento(item)}
-                          disabled={confirmandoReceb === item.id}
-                        >
-                          {confirmandoReceb === item.id ? '...' : '✓ Confirmar'}
-                        </button>
-                      </td>
-                    </tr>
+                    <React.Fragment key={cat}>
+                      <tr>
+                        <td colSpan={5} style={{ padding: '10px 10px 4px', fontSize: '11px', fontWeight: 700, color: '#7A4D0E', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          {CATEGORIA_LABELS[cat] ?? cat}
+                        </td>
+                      </tr>
+                      {grupo.map((item) => {
+                        const divergente = item.recebido !== item.quantidade_comprar
+                        return (
+                          <tr key={item.id} style={{ borderBottom: '1px solid #EADBC2' }}>
+                            <td style={{ padding: '8px 10px', fontWeight: 500 }}>
+                              {item.nome_item}
+                              <div style={{ fontSize: '10px', color: '#9A6518' }}>{item.lista_titulo}</div>
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#5F5E5A' }}>
+                              {item.quantidade_comprar} {item.unidade}
+                            </td>
+                            <td style={{ padding: '8px 10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={item.unidade === 'kg' || item.unidade === 'L' ? 0.5 : 1}
+                                  value={item.recebido}
+                                  onChange={(e) => updateRecebimento(item.id, 'recebido', parseFloat(e.target.value) || 0)}
+                                  style={{
+                                    width: '70px', padding: '4px 6px', textAlign: 'right', borderRadius: '6px',
+                                    border: `1px solid ${divergente ? '#BA7517' : '#E5E3DC'}`,
+                                    background: divergente ? '#FBEFD9' : '#fff',
+                                    fontWeight: divergente ? 600 : 400, fontSize: '13px',
+                                  }}
+                                />
+                                <span style={{ fontSize: '12px', color: '#888780' }}>{item.unidade}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding: '8px 10px' }}>
+                              {divergente ? (
+                                <input
+                                  type="text"
+                                  value={item.motivo}
+                                  onChange={(e) => updateRecebimento(item.id, 'motivo', e.target.value)}
+                                  placeholder="Ex: fornecedor enviou a menos"
+                                  style={{ width: '100%', minWidth: '180px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #BA7517', fontSize: '12px' }}
+                                />
+                              ) : (
+                                <span style={{ fontSize: '12px', color: '#1D9E75' }}>✓ Conforme pedido</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                              <button
+                                className="btn btn-sm btn-primary"
+                                onClick={() => confirmarRecebimento(item)}
+                                disabled={confirmandoReceb === item.id}
+                              >
+                                {confirmandoReceb === item.id ? '...' : '✓ Confirmar'}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </React.Fragment>
                   )
                 })}
               </tbody>
