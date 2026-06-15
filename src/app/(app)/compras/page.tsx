@@ -73,10 +73,15 @@ export default function ComprasPage() {
   const [modalAberto, setModalAberto] = useState(false)
   const [modalPreco, setModalPreco] = useState<CompraItem | null>(null)
   const [precoInput, setPrecoInput] = useState('')
+  const [qtdComprando, setQtdComprando] = useState('')
   const [emailUsuario, setEmailUsuario] = useState<string>('')
   const [quantidades, setQuantidades] = useState<Record<string, number>>({})
   const [salvandoItem, setSalvandoItem] = useState<string | null>(null)
   const [modalHistorico, setModalHistorico] = useState(false)
+  const [modalAvulso, setModalAvulso] = useState(false)
+  const [produtosCadastrados, setProdutosCadastrados] = useState<{ id: string; nome: string; unidade: string; categoria: string }[]>([])
+  const [avulso, setAvulso] = useState({ nome: '', quantidade: '', unidade: 'kg', categoria: 'outros', produto_id: null as string | null })
+  const [salvandoAvulso, setSalvandoAvulso] = useState(false)
   const [logs, setLogs] = useState<any[]>([])
   const [carregandoLogs, setCarregandoLogs] = useState(false)
 
@@ -209,6 +214,64 @@ export default function ComprasPage() {
       .limit(200)
     setLogs(data || [])
     setCarregandoLogs(false)
+  }
+
+  async function abrirModalAvulso() {
+    if (!listaSelecionada) {
+      alert('Selecione ou gere uma lista primeiro.')
+      return
+    }
+    setModalAvulso(true)
+    setAvulso({ nome: '', quantidade: '', unidade: 'kg', categoria: 'outros', produto_id: null })
+    // Carrega produtos cadastrados para o autocomplete
+    const { data } = await supabase
+      .from('produtos')
+      .select('id, nome, unidade, categoria')
+      .eq('ativo', true)
+      .order('nome')
+    setProdutosCadastrados(data || [])
+  }
+
+  // Quando escolhe um produto da lista, preenche unidade e categoria
+  function selecionarProdutoAvulso(nome: string) {
+    const prod = produtosCadastrados.find(p => p.nome === nome)
+    if (prod) {
+      setAvulso(a => ({ ...a, nome: prod.nome, unidade: prod.unidade, categoria: prod.categoria, produto_id: prod.id }))
+    } else {
+      setAvulso(a => ({ ...a, nome, produto_id: null }))
+    }
+  }
+
+  async function salvarItemAvulso() {
+    if (!listaSelecionada) return
+    if (!avulso.nome.trim()) {
+      alert('Informe o nome do item.')
+      return
+    }
+    const qtd = parseFloat(avulso.quantidade.replace(',', '.')) || 0
+    if (qtd <= 0) {
+      alert('Informe a quantidade.')
+      return
+    }
+    setSalvandoAvulso(true)
+
+    await supabase.from('compra_itens').insert({
+      lista_id: listaSelecionada.id,
+      produto_id: avulso.produto_id,
+      nome_item: avulso.nome.trim(),
+      categoria: avulso.categoria,
+      quantidade_necessaria: qtd,
+      quantidade_estoque: 0,
+      quantidade_comprar: qtd,
+      unidade: avulso.unidade,
+      preco_unitario: null,
+      total_estimado: null,
+      status: 'pendente',
+    })
+
+    setSalvandoAvulso(false)
+    setModalAvulso(false)
+    carregarItens(listaSelecionada.id)
   }
 
   function toggleSemana(s: number) {
@@ -409,27 +472,68 @@ export default function ComprasPage() {
   }
 
   async function marcarComprado(item: CompraItem) {
-    if (item.status === 'comprado') return
+    if (item.status !== 'pendente') return
     setModalPreco(item)
     setPrecoInput('')
+    setQtdComprando(String(item.quantidade_comprar)) // default: compra tudo
   }
 
   async function confirmarCompra() {
     if (!modalPreco) return
     const preco = parseFloat(precoInput.replace(',', '.')) || 0
-    const total = preco * modalPreco.quantidade_comprar
+    const comprando = parseFloat(qtdComprando.replace(',', '.')) || 0
+    const totalPedido = modalPreco.quantidade_comprar
 
-    await registrarLog({ item: modalPreco, acao: 'marcado como comprado', quantidadeAnterior: modalPreco.quantidade_comprar, quantidadeNova: modalPreco.quantidade_comprar })
+    if (comprando <= 0) {
+      alert('Informe a quantidade que está comprando.')
+      return
+    }
+    if (comprando > totalPedido) {
+      alert(`Você não pode comprar mais que o pedido (${totalPedido} ${modalPreco.unidade}). Ajuste a quantidade.`)
+      return
+    }
 
-    // Marca como 'aprovado' (= comprado, aguardando recebimento).
-    // A entrada no estoque acontece só quando a cozinheira confirmar o
-    // recebimento na tela de Estoque.
-    await supabase
-      .from('compra_itens')
-      .update({ status: 'aprovado', preco_unitario: preco || null, total_estimado: total || null })
-      .eq('id', modalPreco.id)
+    const total = preco * comprando
+    const parcial = comprando < totalPedido
+    const saldo = Math.round((totalPedido - comprando) * 100) / 100
+
+    await registrarLog({
+      item: modalPreco,
+      acao: parcial ? `compra parcial (${comprando} de ${totalPedido} ${modalPreco.unidade})` : 'marcado como comprado',
+      quantidadeAnterior: totalPedido,
+      quantidadeNova: comprando,
+    })
+
+    if (parcial) {
+      // 1. Cria um NOVO item com a parte comprada (status aprovado, aguardando recebimento)
+      await supabase.from('compra_itens').insert({
+        lista_id: modalPreco.lista_id,
+        produto_id: modalPreco.produto_id,
+        nome_item: modalPreco.nome_item,
+        categoria: modalPreco.categoria,
+        quantidade_necessaria: comprando,
+        quantidade_estoque: 0,
+        quantidade_comprar: comprando,
+        unidade: modalPreco.unidade,
+        preco_unitario: preco || null,
+        total_estimado: total || null,
+        status: 'aprovado',
+      })
+      // 2. Reduz o item original para o saldo restante (continua pendente na lista)
+      await supabase
+        .from('compra_itens')
+        .update({ quantidade_comprar: saldo, quantidade_necessaria: saldo })
+        .eq('id', modalPreco.id)
+    } else {
+      // Compra total: marca o próprio item como aprovado
+      await supabase
+        .from('compra_itens')
+        .update({ status: 'aprovado', preco_unitario: preco || null, total_estimado: total || null })
+        .eq('id', modalPreco.id)
+    }
 
     setModalPreco(null)
+    setQtdComprando('')
     if (listaSelecionada) carregarItens(listaSelecionada.id)
   }
 
@@ -490,6 +594,12 @@ export default function ComprasPage() {
               Histórico
             </button>
           )}
+          <button
+            onClick={abrirModalAvulso}
+            className="border border-green-600 text-green-700 px-4 py-2 rounded-lg hover:bg-green-50 font-medium"
+          >
+            + Item avulso
+          </button>
           <button
             onClick={() => setModalAberto(true)}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-medium"
@@ -798,8 +908,31 @@ export default function ComprasPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
             <h2 className="text-lg font-bold mb-1 text-gray-800">Registrar Compra</h2>
             <p className="text-gray-600 text-sm mb-4">
-              {modalPreco.nome_item} — {modalPreco.quantidade_comprar} {modalPreco.unidade}
+              {modalPreco.nome_item} — pedido: {modalPreco.quantidade_comprar} {modalPreco.unidade}
             </p>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Quantidade comprando agora ({modalPreco.unidade})
+            </label>
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              max={modalPreco.quantidade_comprar}
+              value={qtdComprando}
+              onChange={e => setQtdComprando(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 mb-1 text-sm"
+              autoFocus
+            />
+            {(() => {
+              const comprando = parseFloat(qtdComprando.replace(',', '.')) || 0
+              const saldo = Math.round((modalPreco.quantidade_comprar - comprando) * 100) / 100
+              if (comprando > 0 && saldo > 0) {
+                return <p className="text-xs text-amber-600 mb-3">Compra parcial: {saldo} {modalPreco.unidade} continuarão na lista para comprar depois.</p>
+              }
+              return <div className="mb-3" />
+            })()}
+
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Preço unitário (R$) <span className="text-gray-400 font-normal">— opcional</span>
             </label>
@@ -811,7 +944,6 @@ export default function ComprasPage() {
               onChange={e => setPrecoInput(e.target.value)}
               placeholder="0,00"
               className="w-full border border-gray-300 rounded px-3 py-2 mb-4 text-sm"
-              autoFocus
             />
             <div className="flex gap-3">
               <button
@@ -888,6 +1020,90 @@ export default function ComprasPage() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Item Avulso */}
+      {modalAvulso && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold mb-1 text-gray-800">Adicionar Item Avulso</h2>
+            <p className="text-gray-500 text-sm mb-4">
+              Para itens que não estão no cardápio (ex: detergente, sal, azeite).
+            </p>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">Item</label>
+            <input
+              type="text"
+              list="produtos-cadastrados"
+              value={avulso.nome}
+              onChange={e => selecionarProdutoAvulso(e.target.value)}
+              placeholder="Digite ou escolha um item já cadastrado"
+              className="w-full border border-gray-300 rounded px-3 py-2 mb-1 text-sm"
+              autoFocus
+            />
+            <datalist id="produtos-cadastrados">
+              {produtosCadastrados.map(p => (
+                <option key={p.id} value={p.nome} />
+              ))}
+            </datalist>
+            <p className="text-xs text-gray-400 mb-3">
+              Se já existir, escolha da lista (preenche unidade e categoria). Senão, digite um novo.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={avulso.quantidade}
+                  onChange={e => setAvulso(a => ({ ...a, quantidade: e.target.value }))}
+                  placeholder="0"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
+                <select
+                  value={avulso.unidade}
+                  onChange={e => setAvulso(a => ({ ...a, unidade: e.target.value }))}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  <option>kg</option><option>g</option><option>L</option><option>ml</option>
+                  <option>un</option><option>cx</option><option>pct</option><option>maço</option>
+                </select>
+              </div>
+            </div>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+            <select
+              value={avulso.categoria}
+              onChange={e => setAvulso(a => ({ ...a, categoria: e.target.value }))}
+              className="w-full border border-gray-300 rounded px-3 py-2 mb-5 text-sm"
+            >
+              {CATEGORIAS.map(c => (
+                <option key={c} value={c}>{CATEGORIA_LABELS[c]}</option>
+              ))}
+            </select>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setModalAvulso(false)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarItemAvulso}
+                disabled={salvandoAvulso}
+                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
+              >
+                {salvandoAvulso ? 'Adicionando...' : 'Adicionar à lista'}
+              </button>
             </div>
           </div>
         </div>
