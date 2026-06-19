@@ -181,6 +181,10 @@ export default function ImpressaoPage() {
 
           const ws = XLSX.utils.aoa_to_sheet(aoa)
 
+          // Configuração de impressão: A4 paisagem, ajustar à largura da página
+          ws['!pageSetup'] = { orientation: 'landscape', paperSize: 9, fitToWidth: 1, fitToHeight: 0, scale: 100 }
+          ws['!margins'] = { left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0.1, footer: 0.1 }
+
           // Merges: título (linha 1), cada refeição no cabeçalho e descrição
           const merges: any[] = []
           merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 17 } }) // título A1:R1
@@ -192,10 +196,10 @@ export default function ImpressaoPage() {
           merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 17 } }) // separador
           ws['!merges'] = merges
 
-          // Larguras de coluna (replicando o layout: nome 17, qtd 5.5, un 4)
+          // Larguras de coluna (ampliadas para preencher A4 paisagem)
           ws['!cols'] = Array.from({ length: 18 }, (_, i) => {
             const m = i % 3
-            return { wch: m === 0 ? 17 : m === 1 ? 6 : 4 }
+            return { wch: m === 0 ? 20 : m === 1 ? 7 : 5 }
           })
 
           // Nome da aba (máx 31 chars, sem caracteres inválidos)
