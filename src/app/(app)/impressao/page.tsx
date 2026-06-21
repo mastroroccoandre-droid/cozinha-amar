@@ -484,11 +484,21 @@ export default function ImpressaoPage() {
           }
           .ficha-print table {
             width: 100% !important;
+            height: 100%;
           }
-          /* Nunca cortar uma linha entre páginas */
-          .ficha-print tr {
+          /* Distribui as linhas de conteúdo para preencher a altura da folha */
+          .ficha-print tbody tr {
             page-break-inside: avoid;
             break-inside: avoid;
+          }
+          /* Cada ficha ocupa a altura toda da página impressa */
+          .ficha-print {
+            height: 195mm; /* altura útil de uma A4 paisagem com margem 5mm */
+            display: flex;
+            flex-direction: column;
+          }
+          .ficha-print table {
+            flex: 1;
           }
         }
       `}</style>
