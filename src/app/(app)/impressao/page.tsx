@@ -470,6 +470,29 @@ export default function ImpressaoPage() {
           body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           @page { size: A4 landscape; margin: 5mm; }
 
+          /* Zera qualquer recuo à esquerda herdado do layout (sidebar/container) */
+          html, body, #__next, main, main > div {
+            margin: 0 !important;
+            padding: 0 !important;
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+          }
+          /* A div de conteúdo do AppLayout tem marginLeft inline (220px) — força zerar */
+          body div[style*="margin-left"],
+          body div[style*="marginLeft"] {
+            margin-left: 0 !important;
+          }
+          /* O <main> tem padding 20px inline — zera na impressão */
+          main[style] {
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          /* A ficha encosta na margem esquerda da folha */
+          .ficha-print {
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+          }
+
           /* Cada ficha em sua própria página, sem cortar no meio */
           .ficha-print {
             page-break-after: always;
