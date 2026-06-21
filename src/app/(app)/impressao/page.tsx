@@ -273,8 +273,8 @@ export default function ImpressaoPage() {
   }
 
   const cs: React.CSSProperties = {
-    border: '1px solid #000', padding: '2px 3px', verticalAlign: 'top',
-    fontSize: '7pt', fontFamily: 'Arial, sans-serif', lineHeight: '1.25',
+    border: '1px solid #000', padding: '3px 4px', verticalAlign: 'top',
+    fontSize: '8.5pt', fontFamily: 'Arial, sans-serif', lineHeight: '1.3',
   }
 
   return (
@@ -345,7 +345,7 @@ export default function ImpressaoPage() {
         const rows = Array.from({ length: maxLinhas })
 
         return (
-          <div key={idx} style={{ pageBreakAfter: idx < fichas.length - 1 ? 'always' : 'avoid', marginBottom: '32px' }}>
+          <div key={idx} className="ficha-print" style={{ marginBottom: '32px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
                 <col style={{ width: '10%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '3%' }} />
@@ -470,7 +470,28 @@ export default function ImpressaoPage() {
           main { margin: 0 !important; padding: 0 !important; }
           div[style*="marginLeft"] { margin-left: 0 !important; }
           body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          @page { size: A4 landscape; margin: 6mm; }
+          @page { size: A4 landscape; margin: 5mm; }
+
+          /* Cada ficha ocupa exatamente uma página, sem cortes */
+          .ficha-print {
+            page-break-after: always;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            height: 100%;
+            margin: 0 !important;
+          }
+          .ficha-print:last-child {
+            page-break-after: avoid;
+          }
+          /* A tabela preenche a página inteira */
+          .ficha-print table {
+            width: 100% !important;
+            height: 100%;
+          }
+          /* Evita que linhas sejam cortadas entre páginas */
+          .ficha-print tr, .ficha-print td {
+            page-break-inside: avoid;
+          }
         }
       `}</style>
     </div>
