@@ -273,8 +273,8 @@ export default function ImpressaoPage() {
   }
 
   const cs: React.CSSProperties = {
-    border: '1px solid #000', padding: '3px 4px', verticalAlign: 'top',
-    fontSize: '8.5pt', fontFamily: 'Arial, sans-serif', lineHeight: '1.3',
+    border: '1px solid #000', padding: '2px 4px', verticalAlign: 'top',
+    fontSize: '8pt', fontFamily: 'Arial, sans-serif', lineHeight: '1.25',
   }
 
   return (
@@ -348,15 +348,15 @@ export default function ImpressaoPage() {
           <div key={idx} className="ficha-print" style={{ marginBottom: '32px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '10%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '3%' }} />
-                <col style={{ width: '5%' }} /><col style={{ width: '3%' }} /><col style={{ width: '2.5%' }} />
-                <col style={{ width: '12%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '3%' }} />
-                <col style={{ width: '10%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
-                <col style={{ width: '10%' }} /><col style={{ width: '3%' }} /><col style={{ width: '3%' }} />
-                <col style={{ width: '10%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '3%' }} />
+                <col style={{ width: '10.5%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '2.6%' }} />
+                <col style={{ width: '10.5%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '2.6%' }} />
+                <col style={{ width: '10.5%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '2.6%' }} />
+                <col style={{ width: '10.5%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '2.6%' }} />
+                <col style={{ width: '10.5%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '2.6%' }} />
+                <col style={{ width: '10.5%' }} /><col style={{ width: '3.5%' }} /><col style={{ width: '2.6%' }} />
               </colgroup>
 
-              <thead>
+              <tbody>
                 <tr>
                   <td colSpan={18} style={{ ...cs, textAlign: 'center', fontWeight: 'bold', fontSize: '9pt', background: '#d0d0d0', padding: '4px' }}>
                     RESIDENCIAL AMAR — {ficha.diaObj.ordinal} {ficha.diaObj.label.toUpperCase()} DO MÊS — SEMANA {ficha.semana}
@@ -383,9 +383,7 @@ export default function ImpressaoPage() {
                     ↓ &nbsp; ↓ &nbsp; ↓ &nbsp; ↓ &nbsp; ↓ &nbsp;&nbsp;&nbsp; Quantidades para 59 refeições &nbsp;&nbsp;&nbsp; ↓ &nbsp; ↓ &nbsp; ↓ &nbsp; ↓ &nbsp; ↓
                   </td>
                 </tr>
-              </thead>
 
-              <tbody>
                 {rows.map((_, i) => {
                   const ceia = ings('ceia')
                   const ceiaLen = ceia.length
@@ -472,25 +470,25 @@ export default function ImpressaoPage() {
           body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           @page { size: A4 landscape; margin: 5mm; }
 
-          /* Cada ficha ocupa exatamente uma página, sem cortes */
+          /* Cada ficha em sua própria página, sem cortar no meio */
           .ficha-print {
             page-break-after: always;
+            break-after: page;
             page-break-inside: avoid;
             break-inside: avoid;
-            height: 100%;
             margin: 0 !important;
           }
           .ficha-print:last-child {
             page-break-after: avoid;
+            break-after: auto;
           }
-          /* A tabela preenche a página inteira */
           .ficha-print table {
             width: 100% !important;
-            height: 100%;
           }
-          /* Evita que linhas sejam cortadas entre páginas */
-          .ficha-print tr, .ficha-print td {
+          /* Nunca cortar uma linha entre páginas */
+          .ficha-print tr {
             page-break-inside: avoid;
+            break-inside: avoid;
           }
         }
       `}</style>
