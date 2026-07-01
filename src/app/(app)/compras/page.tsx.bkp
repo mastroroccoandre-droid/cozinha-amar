@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { getSupabase } from '@/lib/supabase'
-import { nomeCanonico, categoriaDoIngrediente } from '@/lib/categorias_ingredientes'
 
 const supabase = getSupabase()
 
@@ -336,6 +335,7 @@ export default function ComprasPage() {
         .from('preparacao_ingredientes')
         .select('*')
         .in('preparacao_id', prepIds)
+        .in('categoria', categoriasSelecionadas)
 
       // 6. Para cada ingrediente, calcular quantidade necessária
       // baseada nos dias reais do mês
@@ -372,12 +372,13 @@ export default function ComprasPage() {
         if (unidade === 'ml') { qtd /= 1000; unidade = 'L' }
 
         // Normaliza nome para evitar duplicatas por acento (ex: "Moída" vs "Moida")
-        const chaveIng = nomeCanonico(ing.nome_ingrediente)
+        const chaveIng = ing.nome_ingrediente.toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
         if (!totais[chaveIng]) {
           totais[chaveIng] = {
             nome: ing.nome_ingrediente,
-            categoria: categoriaDoIngrediente(ing.nome_ingrediente),
+            categoria: ing.categoria,
             unidade,
             produto_id: ing.produto_id || null,
             quantidadeNecessaria: 0,
@@ -419,7 +420,6 @@ export default function ComprasPage() {
       // 8. Filtrar itens com quantidade > 0 e ordenar por nome
       const itensFinal = Object.values(totais)
         .filter(i => i.quantidade > 0)
-        .filter(i => categoriasSelecionadas.includes(i.categoria) || i.categoria === 'outros')
         .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 
       if (itensFinal.length === 0) {
